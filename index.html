@@ -123,6 +123,7 @@
   <div class="panel" id="panel-list">
     <div class="card">
       <div class="toolbar">
+        <select id="listChallengeSelect" style="max-width:240px"></select>
         <input type="text" id="searchBox" class="search" placeholder="名前で検索" style="max-width:240px">
         <span class="small" id="listCount"></span>
       </div>
@@ -132,6 +133,13 @@
 
   <!-- CSV取込タブ -->
   <div class="panel" id="panel-import">
+    <div class="card">
+      <h2>取込先のチャレンジを選択</h2>
+      <p class="hint">CSVを取り込む前に、どの「○月チャレンジ」のデータかを選んでください。既存のチャレンジを選べばそこに追加され、新規入力すれば新しいチャレンジとして作成されます。</p>
+      <select id="challengeSelect" style="margin-bottom:8px"></select>
+      <input type="text" id="challengeNewInput" placeholder="新しいチャレンジ名を入力（例：2026年7月チャレンジ）">
+      <p class="hint" id="challengeCurrentHint" style="margin-top:8px"></p>
+    </div>
     <div class="card">
       <h2>① 予約管理CSVを取込（日程・フリガナ・成約状況など）</h2>
       <input type="file" id="csvFileReserve" accept=".csv">
@@ -145,7 +153,7 @@
       <h2>② 事前アンケートCSVを取込（同じ名前の方に自動で紐づけ）</h2>
       <input type="file" id="csvFileSurvey" accept=".csv">
       <p class="hint">列名の例：お名前、回答日時、その他アンケートの質問項目すべて。<br>
-      ①で登録済みの「直近の来訪」に、名前が一致した場合のみアンケート内容を追加で紐づけます（姓名の間の空白は無視してマッチングします）。<br>
+      ①で登録済みの来訪のうち、回答日時に近いものへ自動で紐づけます（名前またはメールアドレスでマッチング）。<br>
       ①未登録の名前のみ含まれていた場合は、新規の参加者として単独で登録します。</p>
       <div class="row"><button id="importSurveyBtn">事前アンケートCSVを取り込む</button></div>
     </div>
@@ -189,7 +197,8 @@
   var db = firebase.firestore();
   var docRef = db.collection('app').doc('participants');
 
-  var participants = []; // {id, name, kana, visits:[{id, datetime, survey:{}, deal, amount, memo}]}
+  var participants = []; // {id, name, kana, email, visits:[{id, datetime, survey:{}, deal, amount, memo, challenge}]}
+  var challenges = []; // ["2026年2月チャレンジ", ...]
   var isLoaded = false;
   var saveQueued = false;
 
@@ -209,13 +218,19 @@
       if (saveQueued) return;
       if (doc.exists && doc.data() && doc.data().json) {
         try {
-          participants = JSON.parse(doc.data().json);
+          var parsed = JSON.parse(doc.data().json);
+          participants = parsed.participants || [];
+          challenges = parsed.challenges || [];
         } catch(e) {
           participants = [];
+          challenges = [];
         }
       } else {
         participants = [];
+        challenges = [];
       }
+      // 既存データに challenges が無い場合の保険：来訪に書かれているchallenge名を拾い集める
+      ensureChallengesFromVisits();
       isLoaded = true;
       renderAll();
     }, function(err){
@@ -224,10 +239,22 @@
     });
   }
 
+  function ensureChallengesFromVisits(){
+    var set = {};
+    challenges.forEach(function(c){ set[c] = true; });
+    participants.forEach(function(p){
+      p.visits.forEach(function(v){
+        if (v.challenge) set[v.challenge] = true;
+      });
+    });
+    challenges = Object.keys(set);
+  }
+
   async function saveData(){
     saveQueued = true;
     try {
-      await docRef.set({ json: JSON.stringify(participants), updatedAt: Date.now() });
+      ensureChallengesFromVisits();
+      await docRef.set({ json: JSON.stringify({ participants: participants, challenges: challenges }), updatedAt: Date.now() });
     } catch(e) {
       console.error('save failed', e);
     } finally {
@@ -324,7 +351,7 @@
     return false;
   }
 
-  function importReserveRows(rows){
+  function importReserveRows(rows, challengeName){
     var added = 0, updated = 0, skipped = 0, duplicated = 0, cancelled = 0;
     rows.forEach(function(row){
       var nameCol = findCol(row, nameKeys);
@@ -376,7 +403,8 @@
         survey: survey,
         deal: '',
         amount: '',
-        memo: ''
+        memo: '',
+        challenge: challengeName || ''
       });
       if (!isNew) updated++;
     });
@@ -388,12 +416,18 @@
   var answerDateKeys = ['回答日時','回答日'];
 
   // 来訪の中から、回答日時に最も近い（できれば回答日時より後の）来訪を選ぶ
-  function findBestVisit(person, answerDate){
-    if (!person.visits.length) return null;
-    var withDate = person.visits.filter(function(v){ return parseDate(v.datetime); });
+  // challengeName が指定されていれば、同じチャレンジの来訪だけを対象にする
+  function findBestVisit(person, answerDate, challengeName){
+    var pool = person.visits;
+    if (challengeName) {
+      var sameChallenge = pool.filter(function(v){ return v.challenge === challengeName; });
+      if (sameChallenge.length) pool = sameChallenge;
+    }
+    if (!pool.length) return null;
+    var withDate = pool.filter(function(v){ return parseDate(v.datetime); });
     if (!withDate.length) {
       // 日時情報を持つ来訪が一つもなければ、唯一の来訪（または最後の来訪）を使う
-      return person.visits[person.visits.length - 1];
+      return pool[pool.length - 1];
     }
     var ansD = parseDate(answerDate);
     if (!ansD) {
@@ -412,7 +446,7 @@
     return withDate[0];
   }
 
-  function importSurveyRows(rows){
+  function importSurveyRows(rows, challengeName){
     var linked = 0, newly = 0, skipped = 0, duplicated = 0;
     rows.forEach(function(row){
       var nameCol = findCol(row, nameKeys);
@@ -447,7 +481,7 @@
       }
 
       if (person && person.visits.length) {
-        var targetVisit = findBestVisit(person, answerDate);
+        var targetVisit = findBestVisit(person, answerDate, challengeName);
         // 既存のアンケート内容にマージ（追加優先、上書きしすぎない）
         Object.keys(survey).forEach(function(k){
           targetVisit.survey[k] = survey[k];
@@ -465,7 +499,8 @@
           survey: survey,
           deal: '',
           amount: '',
-          memo: ''
+          memo: '',
+          challenge: challengeName || ''
         });
         newly++;
       }
@@ -489,10 +524,23 @@
     });
   }
 
+  // 新規入力欄が入力されていればそちらを優先、なければプルダウンの選択値を使う
+  function getCurrentChallengeName(){
+    var newInput = document.getElementById('challengeNewInput').value.trim();
+    if (newInput) return newInput;
+    var sel = document.getElementById('challengeSelect');
+    return sel.value || '';
+  }
+
   document.getElementById('importReserveBtn').addEventListener('click', function(){
     try {
       if (typeof Papa === 'undefined') {
         showStatus('importStatus', 'CSV解析ライブラリの読み込みに失敗しました。少し待ってから再度お試しください', false);
+        return;
+      }
+      var challengeName = getCurrentChallengeName();
+      if (!challengeName) {
+        showStatus('importStatus', '取込先のチャレンジを選択するか、新しいチャレンジ名を入力してください', false);
         return;
       }
       var fileInput = document.getElementById('csvFileReserve');
@@ -503,9 +551,11 @@
       readFileAsText(fileInput.files[0], function(text){
         parseCsvText(text, function(rows){
           try {
-            var result = importReserveRows(rows);
-            showStatus('importStatus', '予約管理CSV取込完了：' + result.total + '件処理（新規 ' + result.added + '名 / 既存に追加 ' + result.updated + '件 / キャンセル除外 ' + result.cancelled + '件 / 重複スキップ ' + result.duplicated + '件 / 不正データ ' + result.skipped + '件）', true);
+            var result = importReserveRows(rows, challengeName);
+            showStatus('importStatus', '「' + challengeName + '」へ取込完了：' + result.total + '件処理（新規 ' + result.added + '名 / 既存に追加 ' + result.updated + '件 / キャンセル除外 ' + result.cancelled + '件 / 重複スキップ ' + result.duplicated + '件 / 不正データ ' + result.skipped + '件）', true);
             fileInput.value = '';
+            document.getElementById('challengeNewInput').value = '';
+            refreshChallengeSelectors(challengeName);
           } catch(innerErr) {
             showStatus('importStatus', '取込処理でエラー：' + innerErr.message, false);
           }
@@ -524,6 +574,11 @@
         showStatus('importStatus', 'CSV解析ライブラリの読み込みに失敗しました。少し待ってから再度お試しください', false);
         return;
       }
+      var challengeName = getCurrentChallengeName();
+      if (!challengeName) {
+        showStatus('importStatus', '取込先のチャレンジを選択するか、新しいチャレンジ名を入力してください', false);
+        return;
+      }
       var fileInput = document.getElementById('csvFileSurvey');
       if (!fileInput.files.length) {
         showStatus('importStatus', '事前アンケートCSVファイルを選択してください', false);
@@ -532,9 +587,11 @@
       readFileAsText(fileInput.files[0], function(text){
         parseCsvText(text, function(rows){
           try {
-            var result = importSurveyRows(rows);
-            showStatus('importStatus', '事前アンケートCSV取込完了：' + result.total + '件処理（既存に紐づけ ' + result.linked + '件 / 新規登録 ' + result.newly + '件 / 重複スキップ ' + result.duplicated + '件 / 不正データ ' + result.skipped + '件）', true);
+            var result = importSurveyRows(rows, challengeName);
+            showStatus('importStatus', '「' + challengeName + '」へ取込完了：' + result.total + '件処理（既存に紐づけ ' + result.linked + '件 / 新規登録 ' + result.newly + '件 / 重複スキップ ' + result.duplicated + '件 / 不正データ ' + result.skipped + '件）', true);
             fileInput.value = '';
+            document.getElementById('challengeNewInput').value = '';
+            refreshChallengeSelectors(challengeName);
           } catch(innerErr) {
             showStatus('importStatus', '取込処理でエラー：' + innerErr.message, false);
           }
@@ -550,18 +607,25 @@
   document.getElementById('importPasteBtn').addEventListener('click', function(){
     var text = document.getElementById('csvPaste').value.trim();
     var type = document.getElementById('pasteTypeSelect').value;
+    var challengeName = getCurrentChallengeName();
+    if (!challengeName) {
+      showStatus('importStatus', '取込先のチャレンジを選択するか、新しいチャレンジ名を入力してください', false);
+      return;
+    }
     if (!text) {
       showStatus('importStatus', 'CSVを貼り付けてください', false);
       return;
     }
     parseCsvText(text, function(rows){
-      var result = type === 'survey' ? importSurveyRows(rows) : importReserveRows(rows);
+      var result = type === 'survey' ? importSurveyRows(rows, challengeName) : importReserveRows(rows, challengeName);
       if (type === 'survey') {
-        showStatus('importStatus', '取込完了：' + result.total + '件処理（紐づけ ' + result.linked + '件 / 新規 ' + result.newly + '件）', true);
+        showStatus('importStatus', '「' + challengeName + '」へ取込完了：' + result.total + '件処理（紐づけ ' + result.linked + '件 / 新規 ' + result.newly + '件）', true);
       } else {
-        showStatus('importStatus', '取込完了：' + result.total + '件処理（新規 ' + result.added + '名 / 既存に追加 ' + result.updated + '件 / キャンセル除外 ' + (result.cancelled||0) + '件）', true);
+        showStatus('importStatus', '「' + challengeName + '」へ取込完了：' + result.total + '件処理（新規 ' + result.added + '名 / 既存に追加 ' + result.updated + '件 / キャンセル除外 ' + (result.cancelled||0) + '件）', true);
       }
       document.getElementById('csvPaste').value = '';
+      document.getElementById('challengeNewInput').value = '';
+      refreshChallengeSelectors(challengeName);
     }, function(){
       showStatus('importStatus', 'CSVの解析に失敗しました', false);
     });
@@ -570,20 +634,33 @@
   // ---------- 一覧タブ ----------
   function renderList(){
     var q = document.getElementById('searchBox').value.trim();
-    var list = participants.filter(function(p){
-      return !q || p.name.indexOf(q) !== -1;
-    });
+    var challengeFilter = document.getElementById('listChallengeSelect').value;
+
+    var list = participants
+      .map(function(p){
+        var visitsInChallenge = challengeFilter
+          ? p.visits.filter(function(v){ return v.challenge === challengeFilter; })
+          : p.visits;
+        return { person: p, visits: visitsInChallenge };
+      })
+      .filter(function(entry){
+        if (!entry.visits.length) return false;
+        return !q || entry.person.name.indexOf(q) !== -1;
+      });
+
     document.getElementById('listCount').textContent = list.length + ' 名';
 
     var wrap = document.getElementById('listTableWrap');
     if (!list.length) {
-      wrap.innerHTML = '<p class="empty-msg">登録されている参加者がいません。CSV取込タブから登録してください。</p>';
+      wrap.innerHTML = '<p class="empty-msg">' + (challengeFilter ? 'このチャレンジに該当する参加者がいません。' : '登録されている参加者がいません。CSV取込タブから登録してください。') + '</p>';
       return;
     }
 
     var html = '<table><thead><tr><th>名前</th><th>参加回数</th><th>直近の予約日時</th><th>直近の成約</th><th></th></tr></thead><tbody>';
-    list.forEach(function(p){
-      var lastVisit = p.visits[p.visits.length - 1];
+    list.forEach(function(entry){
+      var p = entry.person;
+      var visits = entry.visits;
+      var lastVisit = visits[visits.length - 1];
       var dealBadge = '';
       if (lastVisit) {
         if (lastVisit.deal === 'yes') dealBadge = '<span class="badge ok">成約</span>';
@@ -591,7 +668,7 @@
       }
       html += '<tr class="clickable" data-id="' + p.id + '">' +
         '<td>' + escapeHtml(p.name) + '</td>' +
-        '<td>' + p.visits.length + '回</td>' +
+        '<td>' + visits.length + '回</td>' +
         '<td>' + escapeHtml(lastVisit ? lastVisit.datetime : '-') + '</td>' +
         '<td>' + dealBadge + '</td>' +
         '<td><button class="secondary del-person-btn" data-id="' + p.id + '" style="padding:4px 10px;font-size:11px">削除</button></td>' +
@@ -881,7 +958,40 @@
     }
   });
 
+  // チャレンジ選択UI（CSV取込タブ・参加者管理タブ）を最新のchallenges一覧で更新する
+  // preferName が指定されていれば、それを選択状態にする
+  function refreshChallengeSelectors(preferName){
+    var sortedChallenges = challenges.slice().sort();
+
+    var importSel = document.getElementById('challengeSelect');
+    var prevImportVal = preferName || importSel.value;
+    importSel.innerHTML = '<option value="">－ 新規入力欄に入力してください －</option>' +
+      sortedChallenges.map(function(c){ return '<option value="' + escapeHtml(c) + '">' + escapeHtml(c) + '</option>'; }).join('');
+    if (sortedChallenges.indexOf(prevImportVal) !== -1) importSel.value = prevImportVal;
+    var hint = document.getElementById('challengeCurrentHint');
+    hint.textContent = importSel.value ? ('現在の取込先：' + importSel.value) : '';
+
+    var listSel = document.getElementById('listChallengeSelect');
+    var prevListVal = listSel.value;
+    listSel.innerHTML = '<option value="">すべてのチャレンジ</option>' +
+      sortedChallenges.map(function(c){ return '<option value="' + escapeHtml(c) + '">' + escapeHtml(c) + '</option>'; }).join('');
+    if (sortedChallenges.indexOf(prevListVal) !== -1) listSel.value = prevListVal;
+  }
+
+  document.getElementById('challengeSelect').addEventListener('change', function(){
+    var hint = document.getElementById('challengeCurrentHint');
+    hint.textContent = this.value ? ('現在の取込先：' + this.value) : '';
+    if (this.value) document.getElementById('challengeNewInput').value = '';
+  });
+
+  document.getElementById('challengeNewInput').addEventListener('input', function(){
+    if (this.value.trim()) document.getElementById('challengeSelect').value = '';
+  });
+
+  document.getElementById('listChallengeSelect').addEventListener('change', renderList);
+
   function renderAll(){
+    refreshChallengeSelectors();
     renderList();
     if (document.getElementById('panel-calendar').classList.contains('active')) renderCalendar();
   }
