@@ -167,16 +167,31 @@
         <button class="secondary" id="reloadBtn">最新データに再読込</button>
         <button class="secondary" id="deleteAllBtn" style="color:#993556;border-color:#ed93b1">全データを削除</button>
       </div>
-      <p class="hint">このアプリのデータは共有ストレージに自動保存され、このURLを開いた人全員が同じ内容を見られます。</p>
+      <p class="hint">このアプリのデータはクラウド上のデータベースに自動保存され、このURLを開いた人全員がリアルタイムで同じ内容を見られます。</p>
     </div>
   </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
 (function(){
-  var STORAGE_KEY = 'consult:participants';
+  var firebaseConfig = {
+    apiKey: "AIzaSyDfZ2SFmj2arUWoOFvw0jyn_1_ben-pfO0",
+    authDomain: "health-school-9d414.firebaseapp.com",
+    projectId: "health-school-9d414",
+    storageBucket: "health-school-9d414.firebasestorage.app",
+    messagingSenderId: "1090225614999",
+    appId: "1:1090225614999:web:2b087b4d5e0add606279d2"
+  };
+  firebase.initializeApp(firebaseConfig);
+  var db = firebase.firestore();
+  var docRef = db.collection('app').doc('participants');
+
   var participants = []; // {id, name, kana, visits:[{id, datetime, survey:{}, deal, amount, memo}]}
+  var isLoaded = false;
+  var saveQueued = false;
 
   function uid(){ return 'p_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8); }
   function vuid(){ return 'v_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8); }
@@ -186,23 +201,37 @@
     return (str || '').trim();
   }
 
-  async function loadData(){
-    try {
-      var res = await window.storage.get('participants', true);
-      if (res && res.value) {
-        participants = JSON.parse(res.value);
+  function loadData(){
+    // 初回読込＋リアルタイム同期。他の人が更新した内容も自動で反映される
+    docRef.onSnapshot(function(doc){
+      // 自分がちょうど保存した直後の通知では再描画によるチラつきを避けるため、
+      // 保存キュー中でなければ常に最新を反映する
+      if (saveQueued) return;
+      if (doc.exists && doc.data() && doc.data().json) {
+        try {
+          participants = JSON.parse(doc.data().json);
+        } catch(e) {
+          participants = [];
+        }
+      } else {
+        participants = [];
       }
-    } catch(e) {
-      participants = [];
-    }
-    renderAll();
+      isLoaded = true;
+      renderAll();
+    }, function(err){
+      console.error('firestore load failed', err);
+      showStatus && showStatus('importStatus', 'データベースへの接続に失敗しました：' + err.message, false);
+    });
   }
 
   async function saveData(){
+    saveQueued = true;
     try {
-      await window.storage.set('participants', JSON.stringify(participants), true);
+      await docRef.set({ json: JSON.stringify(participants), updatedAt: Date.now() });
     } catch(e) {
       console.error('save failed', e);
+    } finally {
+      saveQueued = false;
     }
   }
 
@@ -795,7 +824,10 @@
     URL.revokeObjectURL(url);
   });
 
-  document.getElementById('reloadBtn').addEventListener('click', loadData);
+  document.getElementById('reloadBtn').addEventListener('click', function(){
+    renderAll();
+    showStatus('importStatus', '画面を最新の状態に更新しました', true);
+  });
 
   document.getElementById('deleteAllBtn').addEventListener('click', function(){
     if (confirm('登録されている全ての参加者データを完全に削除します。元には戻せません。よろしいですか？')) {
