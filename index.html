@@ -101,24 +101,13 @@
   <p class="sub">健康ビジネス個別相談｜全員で同じデータを共有しています</p>
 
   <div class="tabs">
-    <button class="tab-btn active" data-tab="list">参加者一覧</button>
-    <button class="tab-btn" data-tab="calendar">カレンダー</button>
+    <button class="tab-btn active" data-tab="calendar">カレンダー</button>
+    <button class="tab-btn" data-tab="list">参加者管理</button>
     <button class="tab-btn" data-tab="import">CSV取込</button>
   </div>
 
-  <!-- 一覧タブ -->
-  <div class="panel active" id="panel-list">
-    <div class="card">
-      <div class="toolbar">
-        <input type="text" id="searchBox" class="search" placeholder="名前で検索" style="max-width:240px">
-        <span class="small" id="listCount"></span>
-      </div>
-      <div id="listTableWrap"></div>
-    </div>
-  </div>
-
   <!-- カレンダータブ -->
-  <div class="panel" id="panel-calendar">
+  <div class="panel active" id="panel-calendar">
     <div class="card">
       <div class="cal-head">
         <button class="secondary" id="prevMonth">← 前月</button>
@@ -130,6 +119,17 @@
     </div>
   </div>
 
+  <!-- 参加者管理タブ -->
+  <div class="panel" id="panel-list">
+    <div class="card">
+      <div class="toolbar">
+        <input type="text" id="searchBox" class="search" placeholder="名前で検索" style="max-width:240px">
+        <span class="small" id="listCount"></span>
+      </div>
+      <div id="listTableWrap"></div>
+    </div>
+  </div>
+
   <!-- CSV取込タブ -->
   <div class="panel" id="panel-import">
     <div class="card">
@@ -137,6 +137,7 @@
       <input type="file" id="csvFileReserve" accept=".csv">
       <p class="hint">列名の例：お名前、フリガナ、日程（予約日時）、担当者、参加状況、成約状況、キャンセル理由 など。<br>
       列名が一致していれば自動的に項目を認識します。文字化けする場合は自動でエンコーディングを判定します。<br>
+      「参加状況」列に「キャンセル」と書かれている行は自動的に取り込み対象から除外されます。<br>
       同じ名前の人がすでに登録されている場合は、新しい来訪（回）として追加されます。</p>
       <div class="row"><button id="importReserveBtn">予約管理CSVを取り込む</button></div>
     </div>
@@ -158,31 +159,6 @@
       <div class="row"><button id="importPasteBtn">貼り付け内容を取り込む</button></div>
     </div>
     <div id="importStatus" class="status-msg"></div>
-
-    <div class="card">
-      <h2>個別実施結果の入力・編集</h2>
-      <p class="hint">CSV取込済みの方を選んで、成約状況や金額・メモを記録できます。</p>
-      <select id="resultPersonSelect"></select>
-      <select id="resultVisitSelect" style="margin-top:8px"></select>
-      <div class="field-row">
-        <label>成約</label>
-        <select id="resultDealSelect" style="flex:1">
-          <option value="">未記入</option>
-          <option value="yes">成約</option>
-          <option value="no">未成約</option>
-        </select>
-      </div>
-      <div class="field-row">
-        <label>金額（円）</label>
-        <input type="text" id="resultAmount" style="flex:1" placeholder="例 98000">
-      </div>
-      <div class="field-row" style="align-items:flex-start">
-        <label>簡易メモ</label>
-        <textarea id="resultMemo" style="flex:1; min-height:60px"></textarea>
-      </div>
-      <div class="row"><button id="saveResultBtn">この内容を保存</button></div>
-      <div id="resultStatus" class="status-msg"></div>
-    </div>
 
     <div class="card">
       <h2>データ管理</h2>
@@ -245,7 +221,6 @@
       btn.classList.add('active');
       document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
       if (btn.dataset.tab === 'calendar') renderCalendar();
-      if (btn.dataset.tab === 'import') refreshResultSelectors();
     });
   });
 
@@ -301,14 +276,28 @@
   var kanaKeys = ['フリガナ','ふりがな','カナ'];
   var dateKeys = ['日程','予約日時','日時','予約日'];
 
+  var statusKeys = ['参加状況'];
+
+  function isCancelledRow(row){
+    var statusCol = findCol(row, statusKeys);
+    if (statusCol && String(row[statusCol]||'').indexOf('キャンセル') !== -1) return true;
+    return false;
+  }
+
   function importReserveRows(rows){
-    var added = 0, updated = 0, skipped = 0, duplicated = 0;
+    var added = 0, updated = 0, skipped = 0, duplicated = 0, cancelled = 0;
     rows.forEach(function(row){
       var nameCol = findCol(row, nameKeys);
       var kanaCol = findCol(row, kanaKeys);
       var dateCol = findCol(row, dateKeys);
       var name = nameCol ? String(row[nameCol]||'').trim() : '';
       if (!name) { skipped++; return; }
+
+      if (isCancelledRow(row)) {
+        cancelled++;
+        return;
+      }
+
       var kana = kanaCol ? String(row[kanaCol]||'').trim() : '';
       var datetime = dateCol ? String(row[dateCol]||'').trim() : '';
 
@@ -349,7 +338,7 @@
       if (!isNew) updated++;
     });
     finishImport();
-    return { added: added, updated: updated, skipped: skipped, duplicated: duplicated, total: rows.length };
+    return { added: added, updated: updated, skipped: skipped, duplicated: duplicated, cancelled: cancelled, total: rows.length };
   }
 
   // ---- 事前アンケートCSV取込：直近の来訪に紐づけ、なければ新規 ----
@@ -444,7 +433,7 @@
         parseCsvText(text, function(rows){
           try {
             var result = importReserveRows(rows);
-            showStatus('importStatus', '予約管理CSV取込完了：' + result.total + '件処理（新規 ' + result.added + '名 / 既存に追加 ' + result.updated + '件 / 重複スキップ ' + result.duplicated + '件 / 不正データ ' + result.skipped + '件）', true);
+            showStatus('importStatus', '予約管理CSV取込完了：' + result.total + '件処理（新規 ' + result.added + '名 / 既存に追加 ' + result.updated + '件 / キャンセル除外 ' + result.cancelled + '件 / 重複スキップ ' + result.duplicated + '件 / 不正データ ' + result.skipped + '件）', true);
             fileInput.value = '';
           } catch(innerErr) {
             showStatus('importStatus', '取込処理でエラー：' + innerErr.message, false);
@@ -499,7 +488,7 @@
       if (type === 'survey') {
         showStatus('importStatus', '取込完了：' + result.total + '件処理（紐づけ ' + result.linked + '件 / 新規 ' + result.newly + '件）', true);
       } else {
-        showStatus('importStatus', '取込完了：' + result.total + '件処理（新規 ' + result.added + '名 / 既存に追加 ' + result.updated + '件）', true);
+        showStatus('importStatus', '取込完了：' + result.total + '件処理（新規 ' + result.added + '名 / 既存に追加 ' + result.updated + '件 / キャンセル除外 ' + (result.cancelled||0) + '件）', true);
       }
       document.getElementById('csvPaste').value = '';
     }, function(){
@@ -565,6 +554,7 @@
           detail.innerHTML = renderPersonDetail(id);
           detail.classList.add('open');
           bindDetailDeleteButtons(detail, id);
+          bindResultEditors(detail, id);
         }
       });
     });
@@ -587,6 +577,22 @@
         }
       });
     });
+  }
+
+  function renderResultEditor(v){
+    var dealOptions = ['', 'yes', 'no'].map(function(opt){
+      var label = opt === 'yes' ? '成約' : opt === 'no' ? '未成約' : '未記入';
+      var sel = (v.deal || '') === opt ? ' selected' : '';
+      return '<option value="' + opt + '"' + sel + '>' + label + '</option>';
+    }).join('');
+    var html = '<div class="result-editor" data-vid="' + v.id + '">';
+    html += '<div class="field-row"><label>成約</label><select class="deal-input" style="flex:1">' + dealOptions + '</select></div>';
+    html += '<div class="field-row"><label>金額（円）</label><input type="text" class="amount-input" style="flex:1" value="' + escapeHtml(v.amount || '') + '" placeholder="例 98000"></div>';
+    html += '<div class="field-row" style="align-items:flex-start"><label>簡易メモ</label><textarea class="memo-input" style="flex:1; min-height:60px">' + escapeHtml(v.memo || '') + '</textarea></div>';
+    html += '<div class="row"><button class="save-result-btn" data-vid="' + v.id + '">この回の内容を保存</button></div>';
+    html += '<div class="status-msg" id="result-status-' + v.id + '"></div>';
+    html += '</div>';
+    return html;
   }
 
   function renderPersonDetail(id){
@@ -614,12 +620,29 @@
       } else {
         html += '<dt>事前アンケート</dt><dd>登録なし</dd>';
       }
-      html += '<dt>成約</dt><dd>' + (v.deal === 'yes' ? '成約' : v.deal === 'no' ? '未成約' : '未記入') + '</dd>';
-      html += '<dt>金額</dt><dd>' + escapeHtml(v.amount ? (v.amount + ' 円') : '-') + '</dd>';
-      html += '<dt>メモ</dt><dd>' + escapeHtml(v.memo || '-') + '</dd>';
-      html += '</dl></div>';
+      html += '</dl>';
+      html += renderResultEditor(v);
+      html += '</div>';
     });
     return html;
+  }
+
+  function bindResultEditors(containerEl, personId){
+    containerEl.querySelectorAll('.save-result-btn').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var vid = btn.dataset.vid;
+        var editor = containerEl.querySelector('.result-editor[data-vid="' + vid + '"]');
+        var p = participants.find(function(x){ return x.id === personId; });
+        if (!p) return;
+        var v = p.visits.find(function(x){ return x.id === vid; });
+        if (!v) return;
+        v.deal = editor.querySelector('.deal-input').value;
+        v.amount = editor.querySelector('.amount-input').value.trim();
+        v.memo = editor.querySelector('.memo-input').value.trim();
+        saveData();
+        showStatus('result-status-' + vid, '保存しました', true);
+      });
+    });
   }
 
   function escapeHtml(s){
@@ -731,6 +754,7 @@
           var v = p.visits.find(function(x){ return x.id === vid; });
           detail.innerHTML = renderSingleVisitDetail(v);
           detail.classList.add('open');
+          bindResultEditors(detail, pid);
         }
       });
     });
@@ -746,10 +770,8 @@
     } else {
       html += '<dt>事前アンケート</dt><dd>登録なし</dd>';
     }
-    html += '<dt>成約</dt><dd>' + (v.deal === 'yes' ? '成約' : v.deal === 'no' ? '未成約' : '未記入') + '</dd>';
-    html += '<dt>金額</dt><dd>' + escapeHtml(v.amount ? (v.amount + ' 円') : '-') + '</dd>';
-    html += '<dt>メモ</dt><dd>' + escapeHtml(v.memo || '-') + '</dd>';
     html += '</dl>';
+    html += renderResultEditor(v);
     return html;
   }
 
@@ -760,65 +782,6 @@
   document.getElementById('nextMonth').addEventListener('click', function(){
     calCursor.setMonth(calCursor.getMonth()+1);
     renderCalendar();
-  });
-
-  // ---------- 個別実施結果 入力 ----------
-  function refreshResultSelectors(){
-    var sel = document.getElementById('resultPersonSelect');
-    sel.innerHTML = '<option value="">参加者を選択</option>' + participants.map(function(p){
-      return '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>';
-    }).join('');
-    document.getElementById('resultVisitSelect').innerHTML = '<option value="">先に参加者を選択</option>';
-    clearResultFields();
-  }
-
-  function clearResultFields(){
-    document.getElementById('resultDealSelect').value = '';
-    document.getElementById('resultAmount').value = '';
-    document.getElementById('resultMemo').value = '';
-  }
-
-  document.getElementById('resultPersonSelect').addEventListener('change', function(){
-    var pid = this.value;
-    var visitSel = document.getElementById('resultVisitSelect');
-    if (!pid) {
-      visitSel.innerHTML = '<option value="">先に参加者を選択</option>';
-      clearResultFields();
-      return;
-    }
-    var p = participants.find(function(x){ return x.id === pid; });
-    visitSel.innerHTML = p.visits.map(function(v, idx){
-      return '<option value="' + v.id + '">第' + (idx+1) + '回｜' + escapeHtml(v.datetime || '日時未登録') + '</option>';
-    }).join('');
-    visitSel.dispatchEvent(new Event('change'));
-  });
-
-  document.getElementById('resultVisitSelect').addEventListener('change', function(){
-    var pid = document.getElementById('resultPersonSelect').value;
-    var vid = this.value;
-    if (!pid || !vid) { clearResultFields(); return; }
-    var p = participants.find(function(x){ return x.id === pid; });
-    var v = p.visits.find(function(x){ return x.id === vid; });
-    document.getElementById('resultDealSelect').value = v.deal || '';
-    document.getElementById('resultAmount').value = v.amount || '';
-    document.getElementById('resultMemo').value = v.memo || '';
-  });
-
-  document.getElementById('saveResultBtn').addEventListener('click', function(){
-    var pid = document.getElementById('resultPersonSelect').value;
-    var vid = document.getElementById('resultVisitSelect').value;
-    if (!pid || !vid) {
-      showStatus('resultStatus', '参加者と回を選択してください', false);
-      return;
-    }
-    var p = participants.find(function(x){ return x.id === pid; });
-    var v = p.visits.find(function(x){ return x.id === vid; });
-    v.deal = document.getElementById('resultDealSelect').value;
-    v.amount = document.getElementById('resultAmount').value.trim();
-    v.memo = document.getElementById('resultMemo').value.trim();
-    saveData();
-    renderAll();
-    showStatus('resultStatus', '保存しました', true);
   });
 
   // ---------- バックアップ・再読込 ----------
@@ -847,7 +810,6 @@
   function renderAll(){
     renderList();
     if (document.getElementById('panel-calendar').classList.contains('active')) renderCalendar();
-    refreshResultSelectors();
   }
 
   loadData();
