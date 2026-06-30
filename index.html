@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>個別相談参加者管理</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    background: #f6f4ef;
+    color: #2c2c2a;
+    margin: 0;
+    padding: 0 0 4rem;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 1.5rem 1.25rem; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 .25rem; }
+  .sub { color: #6b6a64; font-size: 13px; margin: 0 0 1.5rem; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 1.25rem; border-bottom: 1px solid #ddd9cf; }
+  .tab-btn {
+    padding: 10px 16px; border: none; background: none; cursor: pointer;
+    font-size: 14px; color: #6b6a64; border-bottom: 2px solid transparent; font-weight: 500;
+  }
+  .tab-btn.active { color: #2c2c2a; border-bottom-color: #993556; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .card {
+    background: #fff; border: 1px solid #e6e3da; border-radius: 12px;
+    padding: 1.25rem; margin-bottom: 1rem;
+  }
+  .card h2 { font-size: 15px; font-weight: 600; margin: 0 0 .75rem; }
+  textarea, input[type=text], input[type=file], select {
+    width: 100%; font-size: 14px; padding: 8px 10px; border: 1px solid #d8d5cb;
+    border-radius: 8px; font-family: inherit; background: #fdfcf9;
+  }
+  textarea { min-height: 110px; resize: vertical; }
+  button {
+    border: 1px solid #2c2c2a; background: #2c2c2a; color: #fff;
+    padding: 9px 18px; border-radius: 8px; font-size: 13px; cursor: pointer; font-weight: 500;
+  }
+  button.secondary { background: #fff; color: #2c2c2a; border-color: #d8d5cb; }
+  button:active { transform: scale(.98); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: .6rem; }
+  .hint { font-size: 12px; color: #8a8880; margin-top: 6px; line-height: 1.6; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #ede9df; vertical-align: top; }
+  th { color: #6b6a64; font-weight: 500; font-size: 12px; }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover { background: #faf8f3; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+  .badge.ok { background: #e1f5ee; color: #04342c; }
+  .badge.no { background: #f1efe8; color: #5f5e5a; }
+  .search { margin-bottom: .8rem; }
+  .detail {
+    display: none; background: #faf8f3; border: 1px solid #ede9df; border-radius: 10px;
+    padding: 1rem; margin-top: 6px;
+  }
+  .detail.open { display: block; }
+  .detail dt { font-size: 11px; color: #8a8880; margin-top: 8px; }
+  .detail dt:first-child { margin-top: 0; }
+  .detail dd { margin: 2px 0 0; font-size: 13px; white-space: pre-wrap; }
+  .visit-block { border: 1px solid #ede9df; border-radius: 10px; padding: .9rem; margin-bottom: .7rem; background: #faf8f3; }
+  .visit-block h4 { margin: 0 0 6px; font-size: 13px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+  .cal-head .month { font-size: 16px; font-weight: 600; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal-dow { text-align: center; font-size: 11px; color: #8a8880; padding: 4px 0; }
+  .cal-day {
+    aspect-ratio: 1; border: 1px solid #ede9df; border-radius: 8px; padding: 4px;
+    font-size: 12px; cursor: pointer; position: relative; background: #fff;
+    display: flex; flex-direction: column; align-items: flex-start;
+  }
+  .cal-day.empty { border: none; cursor: default; background: transparent; }
+  .cal-day:hover:not(.empty) { border-color: #d8d5cb; }
+  .cal-day.has-event { background: #fbeaf0; border-color: #ed93b1; }
+  .cal-day.selected { border-color: #993556; border-width: 2px; }
+  .cal-day .num { font-weight: 500; }
+  .cal-day .cnt { font-size: 10px; color: #993556; margin-top: auto; }
+  .day-list { margin-top: 1.2rem; }
+  .slot { display: flex; gap: 12px; padding: 10px 4px; border-bottom: 1px solid #ede9df; align-items: flex-start; cursor: pointer; }
+  .slot:hover { background: #faf8f3; }
+  .slot .time { font-weight: 600; font-size: 13px; min-width: 56px; color: #993556; }
+  .slot .name { font-size: 14px; }
+  .empty-msg { color: #8a8880; font-size: 13px; padding: 1rem 0; }
+  .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: .8rem; flex-wrap: wrap; gap: 8px; }
+  .small { font-size: 12px; color: #8a8880; }
+  .status-msg { font-size: 12px; padding: 6px 10px; border-radius: 6px; margin-top: 8px; display: none; }
+  .status-msg.show { display: block; }
+  .status-msg.ok { background: #e1f5ee; color: #04342c; }
+  .status-msg.err { background: #fcebeb; color: #501313; }
+  .field-row { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+  .field-row label { font-size: 12px; color: #6b6a64; min-width: 110px; }
+  .person-card-link { color: #993556; cursor: pointer; text-decoration: underline; }
+  .close-x { float: right; cursor: pointer; color: #8a8880; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>個別相談参加者管理</h1>
+  <p class="sub">健康ビジネス個別相談｜全員で同じデータを共有しています</p>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="list">参加者一覧</button>
+    <button class="tab-btn" data-tab="calendar">カレンダー</button>
+    <button class="tab-btn" data-tab="import">CSV取込</button>
+  </div>
+
+  <!-- 一覧タブ -->
+  <div class="panel active" id="panel-list">
+    <div class="card">
+      <div class="toolbar">
+        <input type="text" id="searchBox" class="search" placeholder="名前で検索" style="max-width:240px">
+        <span class="small" id="listCount"></span>
+      </div>
+      <div id="listTableWrap"></div>
+    </div>
+  </div>
+
+  <!-- カレンダータブ -->
+  <div class="panel" id="panel-calendar">
+    <div class="card">
+      <div class="cal-head">
+        <button class="secondary" id="prevMonth">← 前月</button>
+        <span class="month" id="calMonthLabel"></span>
+        <button class="secondary" id="nextMonth">次月 →</button>
+      </div>
+      <div class="cal-grid" id="calGrid"></div>
+      <div class="day-list" id="dayList"></div>
+    </div>
+  </div>
+
+  <!-- CSV取込タブ -->
+  <div class="panel" id="panel-import">
+    <div class="card">
+      <h2>① 予約管理CSVを取込（日程・フリガナ・成約状況など）</h2>
+      <input type="file" id="csvFileReserve" accept=".csv">
+      <p class="hint">列名の例：お名前、フリガナ、日程（予約日時）、担当者、参加状況、成約状況、キャンセル理由 など。<br>
+      列名が一致していれば自動的に項目を認識します。文字化けする場合は自動でエンコーディングを判定します。<br>
+      同じ名前の人がすでに登録されている場合は、新しい来訪（回）として追加されます。</p>
+      <div class="row"><button id="importReserveBtn">予約管理CSVを取り込む</button></div>
+    </div>
+    <div class="card">
+      <h2>② 事前アンケートCSVを取込（同じ名前の方に自動で紐づけ）</h2>
+      <input type="file" id="csvFileSurvey" accept=".csv">
+      <p class="hint">列名の例：お名前、回答日時、その他アンケートの質問項目すべて。<br>
+      ①で登録済みの「直近の来訪」に、名前が一致した場合のみアンケート内容を追加で紐づけます（姓名の間の空白は無視してマッチングします）。<br>
+      ①未登録の名前のみ含まれていた場合は、新規の参加者として単独で登録します。</p>
+      <div class="row"><button id="importSurveyBtn">事前アンケートCSVを取り込む</button></div>
+    </div>
+    <div class="card">
+      <h2>CSVを貼り付けて取込</h2>
+      <select id="pasteTypeSelect" style="margin-bottom:8px">
+        <option value="reserve">予約管理データとして取込</option>
+        <option value="survey">事前アンケートデータとして取込</option>
+      </select>
+      <textarea id="csvPaste" placeholder="お名前,日程,フリガナ&#10;山田花子,2026/07/15(水) 13:00-14:00,ヤマダハナコ"></textarea>
+      <div class="row"><button id="importPasteBtn">貼り付け内容を取り込む</button></div>
+    </div>
+    <div id="importStatus" class="status-msg"></div>
+
+    <div class="card">
+      <h2>個別実施結果の入力・編集</h2>
+      <p class="hint">CSV取込済みの方を選んで、成約状況や金額・メモを記録できます。</p>
+      <select id="resultPersonSelect"></select>
+      <select id="resultVisitSelect" style="margin-top:8px"></select>
+      <div class="field-row">
+        <label>成約</label>
+        <select id="resultDealSelect" style="flex:1">
+          <option value="">未記入</option>
+          <option value="yes">成約</option>
+          <option value="no">未成約</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label>金額（円）</label>
+        <input type="text" id="resultAmount" style="flex:1" placeholder="例 98000">
+      </div>
+      <div class="field-row" style="align-items:flex-start">
+        <label>簡易メモ</label>
+        <textarea id="resultMemo" style="flex:1; min-height:60px"></textarea>
+      </div>
+      <div class="row"><button id="saveResultBtn">この内容を保存</button></div>
+      <div id="resultStatus" class="status-msg"></div>
+    </div>
+
+    <div class="card">
+      <h2>データ管理</h2>
+      <div class="row">
+        <button class="secondary" id="exportJsonBtn">バックアップを書き出す（JSON）</button>
+        <button class="secondary" id="reloadBtn">最新データに再読込</button>
+        <button class="secondary" id="deleteAllBtn" style="color:#993556;border-color:#ed93b1">全データを削除</button>
+      </div>
+      <p class="hint">このアプリのデータは共有ストレージに自動保存され、このURLを開いた人全員が同じ内容を見られます。</p>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script>
+(function(){
+  var STORAGE_KEY = 'consult:participants';
+  var participants = []; // {id, name, kana, visits:[{id, datetime, survey:{}, deal, amount, memo}]}
+
+  function uid(){ return 'p_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8); }
+  function vuid(){ return 'v_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8); }
+
+  function toKana(str){
+    // 簡易：ひらがな化できないので、入力名そのままを並び替えキーに使う（全角優先のローカライズはしない）
+    return (str || '').trim();
+  }
+
+  async function loadData(){
+    try {
+      var res = await window.storage.get('participants', true);
+      if (res && res.value) {
+        participants = JSON.parse(res.value);
+      }
+    } catch(e) {
+      participants = [];
+    }
+    renderAll();
+  }
+
+  async function saveData(){
+    try {
+      await window.storage.set('participants', JSON.stringify(participants), true);
+    } catch(e) {
+      console.error('save failed', e);
+    }
+  }
+
+  function showStatus(elId, msg, ok){
+    var el = document.getElementById(elId);
+    el.textContent = msg;
+    el.className = 'status-msg show ' + (ok ? 'ok' : 'err');
+    setTimeout(function(){ el.className = 'status-msg'; }, 4000);
+  }
+
+  // ---------- タブ切り替え ----------
+  document.querySelectorAll('.tab-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+      document.querySelectorAll('.panel').forEach(function(p){ p.classList.remove('active'); });
+      btn.classList.add('active');
+      document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+      if (btn.dataset.tab === 'calendar') renderCalendar();
+      if (btn.dataset.tab === 'import') refreshResultSelectors();
+    });
+  });
+
+  // ---------- CSV取込 共通処理 ----------
+  function normalizeKey(k){ return (k||'').trim(); }
+
+  // 名前マッチング用：全角/半角スペース・前後空白を除去
+  function normName(s){
+    return (s||'').replace(/[\s\u3000]/g, '').trim();
+  }
+
+  function findCol(row, candidates){
+    var keys = Object.keys(row);
+    for (var i=0;i<candidates.length;i++){
+      for (var j=0;j<keys.length;j++){
+        if (keys[j].indexOf(candidates[i]) !== -1) return keys[j];
+      }
+    }
+    return null;
+  }
+
+  function findPerson(name){
+    var key = normName(name);
+    return participants.find(function(p){ return normName(p.name) === key; });
+  }
+
+  // ---- ファイルの文字コード自動判定して読み込む ----
+  function readFileAsText(file, callback){
+    var reader = new FileReader();
+    reader.onload = function(e){
+      var buf = new Uint8Array(e.target.result);
+      var text;
+      try {
+        // UTF-8として読めるか試す（文字化けバイト列があれば例外 or 置換文字が出る）
+        var utf8Decoder = new TextDecoder('utf-8', { fatal: true });
+        text = utf8Decoder.decode(buf);
+      } catch(err) {
+        try {
+          var sjisDecoder = new TextDecoder('shift-jis');
+          text = sjisDecoder.decode(buf);
+        } catch(err2) {
+          var utf8Lenient = new TextDecoder('utf-8');
+          text = utf8Lenient.decode(buf);
+        }
+      }
+      callback(text);
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  // ---- 予約管理CSV取込 ----
+  var nameKeys = ['お名前','名前','氏名'];
+  var kanaKeys = ['フリガナ','ふりがな','カナ'];
+  var dateKeys = ['日程','予約日時','日時','予約日'];
+
+  function importReserveRows(rows){
+    var added = 0, updated = 0, skipped = 0, duplicated = 0;
+    rows.forEach(function(row){
+      var nameCol = findCol(row, nameKeys);
+      var kanaCol = findCol(row, kanaKeys);
+      var dateCol = findCol(row, dateKeys);
+      var name = nameCol ? String(row[nameCol]||'').trim() : '';
+      if (!name) { skipped++; return; }
+      var kana = kanaCol ? String(row[kanaCol]||'').trim() : '';
+      var datetime = dateCol ? String(row[dateCol]||'').trim() : '';
+
+      var survey = {};
+      Object.keys(row).forEach(function(k){
+        if (k === nameCol || k === kanaCol) return;
+        var v = row[k];
+        if (v === undefined || v === null || String(v).trim() === '') return;
+        survey[normalizeKey(k)] = String(v).trim();
+      });
+
+      var person = findPerson(name);
+      var isNew = false;
+      if (!person) {
+        person = { id: uid(), name: name, kana: kana || toKana(name), visits: [] };
+        participants.push(person);
+        added++;
+        isNew = true;
+      } else {
+        if (kana && !person.kana) person.kana = kana;
+      }
+
+      // 重複チェック：同じ人・同じ日時の来訪が既にあれば追加しない
+      var dup = person.visits.some(function(v){ return v.datetime === datetime; });
+      if (dup) {
+        duplicated++;
+        return;
+      }
+
+      person.visits.push({
+        id: vuid(),
+        datetime: datetime,
+        survey: survey,
+        deal: '',
+        amount: '',
+        memo: ''
+      });
+      if (!isNew) updated++;
+    });
+    finishImport();
+    return { added: added, updated: updated, skipped: skipped, duplicated: duplicated, total: rows.length };
+  }
+
+  // ---- 事前アンケートCSV取込：直近の来訪に紐づけ、なければ新規 ----
+  var answerDateKeys = ['回答日時','回答日'];
+
+  function importSurveyRows(rows){
+    var linked = 0, newly = 0, skipped = 0, duplicated = 0;
+    rows.forEach(function(row){
+      var nameCol = findCol(row, nameKeys);
+      var name = nameCol ? String(row[nameCol]||'').trim() : '';
+      if (!name) { skipped++; return; }
+
+      var answerDateCol = findCol(row, answerDateKeys);
+      var answerDate = answerDateCol ? String(row[answerDateCol]||'').trim() : '';
+
+      var survey = {};
+      Object.keys(row).forEach(function(k){
+        if (k === nameCol) return;
+        var v = row[k];
+        if (v === undefined || v === null || String(v).trim() === '') return;
+        survey[normalizeKey(k)] = String(v).trim();
+      });
+
+      var person = findPerson(name);
+
+      // 重複チェック：同じ人のいずれかの来訪に、同じ回答日時のアンケートが既に紐づいていればスキップ
+      if (person && answerDate) {
+        var already = person.visits.some(function(v){
+          var ansKey = answerDateCol ? normalizeKey(answerDateCol) : null;
+          return ansKey && v.survey && v.survey[ansKey] === answerDate;
+        });
+        if (already) {
+          duplicated++;
+          return;
+        }
+      }
+
+      if (person && person.visits.length) {
+        var lastVisit = person.visits[person.visits.length - 1];
+        // 既存のアンケート内容にマージ（上書きしすぎないよう追加優先）
+        Object.keys(survey).forEach(function(k){
+          lastVisit.survey[k] = survey[k];
+        });
+        linked++;
+      } else {
+        if (!person) {
+          person = { id: uid(), name: name, kana: toKana(name), visits: [] };
+          participants.push(person);
+        }
+        person.visits.push({
+          id: vuid(),
+          datetime: '',
+          survey: survey,
+          deal: '',
+          amount: '',
+          memo: ''
+        });
+        newly++;
+      }
+    });
+    finishImport();
+    return { linked: linked, newly: newly, skipped: skipped, duplicated: duplicated, total: rows.length };
+  }
+
+  function finishImport(){
+    participants.sort(function(a,b){ return (a.kana||a.name).localeCompare(b.kana||b.name, 'ja'); });
+    saveData();
+    renderAll();
+  }
+
+  function parseCsvText(text, onSuccess, onError){
+    Papa.parse(text, {
+      header: true,
+      skipEmptyLines: true,
+      complete: function(res){ onSuccess(res.data); },
+      error: onError
+    });
+  }
+
+  document.getElementById('importReserveBtn').addEventListener('click', function(){
+    try {
+      if (typeof Papa === 'undefined') {
+        showStatus('importStatus', 'CSV解析ライブラリの読み込みに失敗しました。少し待ってから再度お試しください', false);
+        return;
+      }
+      var fileInput = document.getElementById('csvFileReserve');
+      if (!fileInput.files.length) {
+        showStatus('importStatus', '予約管理CSVファイルを選択してください', false);
+        return;
+      }
+      readFileAsText(fileInput.files[0], function(text){
+        parseCsvText(text, function(rows){
+          try {
+            var result = importReserveRows(rows);
+            showStatus('importStatus', '予約管理CSV取込完了：' + result.total + '件処理（新規 ' + result.added + '名 / 既存に追加 ' + result.updated + '件 / 重複スキップ ' + result.duplicated + '件 / 不正データ ' + result.skipped + '件）', true);
+            fileInput.value = '';
+          } catch(innerErr) {
+            showStatus('importStatus', '取込処理でエラー：' + innerErr.message, false);
+          }
+        }, function(){
+          showStatus('importStatus', 'CSVの読み込みに失敗しました', false);
+        });
+      });
+    } catch(err) {
+      showStatus('importStatus', 'エラーが発生しました：' + err.message, false);
+    }
+  });
+
+  document.getElementById('importSurveyBtn').addEventListener('click', function(){
+    try {
+      if (typeof Papa === 'undefined') {
+        showStatus('importStatus', 'CSV解析ライブラリの読み込みに失敗しました。少し待ってから再度お試しください', false);
+        return;
+      }
+      var fileInput = document.getElementById('csvFileSurvey');
+      if (!fileInput.files.length) {
+        showStatus('importStatus', '事前アンケートCSVファイルを選択してください', false);
+        return;
+      }
+      readFileAsText(fileInput.files[0], function(text){
+        parseCsvText(text, function(rows){
+          try {
+            var result = importSurveyRows(rows);
+            showStatus('importStatus', '事前アンケートCSV取込完了：' + result.total + '件処理（既存に紐づけ ' + result.linked + '件 / 新規登録 ' + result.newly + '件 / 重複スキップ ' + result.duplicated + '件 / 不正データ ' + result.skipped + '件）', true);
+            fileInput.value = '';
+          } catch(innerErr) {
+            showStatus('importStatus', '取込処理でエラー：' + innerErr.message, false);
+          }
+        }, function(){
+          showStatus('importStatus', 'CSVの読み込みに失敗しました', false);
+        });
+      });
+    } catch(err) {
+      showStatus('importStatus', 'エラーが発生しました：' + err.message, false);
+    }
+  });
+
+  document.getElementById('importPasteBtn').addEventListener('click', function(){
+    var text = document.getElementById('csvPaste').value.trim();
+    var type = document.getElementById('pasteTypeSelect').value;
+    if (!text) {
+      showStatus('importStatus', 'CSVを貼り付けてください', false);
+      return;
+    }
+    parseCsvText(text, function(rows){
+      var result = type === 'survey' ? importSurveyRows(rows) : importReserveRows(rows);
+      if (type === 'survey') {
+        showStatus('importStatus', '取込完了：' + result.total + '件処理（紐づけ ' + result.linked + '件 / 新規 ' + result.newly + '件）', true);
+      } else {
+        showStatus('importStatus', '取込完了：' + result.total + '件処理（新規 ' + result.added + '名 / 既存に追加 ' + result.updated + '件）', true);
+      }
+      document.getElementById('csvPaste').value = '';
+    }, function(){
+      showStatus('importStatus', 'CSVの解析に失敗しました', false);
+    });
+  });
+
+  // ---------- 一覧タブ ----------
+  function renderList(){
+    var q = document.getElementById('searchBox').value.trim();
+    var list = participants.filter(function(p){
+      return !q || p.name.indexOf(q) !== -1;
+    });
+    document.getElementById('listCount').textContent = list.length + ' 名';
+
+    var wrap = document.getElementById('listTableWrap');
+    if (!list.length) {
+      wrap.innerHTML = '<p class="empty-msg">登録されている参加者がいません。CSV取込タブから登録してください。</p>';
+      return;
+    }
+
+    var html = '<table><thead><tr><th>名前</th><th>参加回数</th><th>直近の予約日時</th><th>直近の成約</th><th></th></tr></thead><tbody>';
+    list.forEach(function(p){
+      var lastVisit = p.visits[p.visits.length - 1];
+      var dealBadge = '';
+      if (lastVisit) {
+        if (lastVisit.deal === 'yes') dealBadge = '<span class="badge ok">成約</span>';
+        else if (lastVisit.deal === 'no') dealBadge = '<span class="badge no">未成約</span>';
+      }
+      html += '<tr class="clickable" data-id="' + p.id + '">' +
+        '<td>' + escapeHtml(p.name) + '</td>' +
+        '<td>' + p.visits.length + '回</td>' +
+        '<td>' + escapeHtml(lastVisit ? lastVisit.datetime : '-') + '</td>' +
+        '<td>' + dealBadge + '</td>' +
+        '<td><button class="secondary del-person-btn" data-id="' + p.id + '" style="padding:4px 10px;font-size:11px">削除</button></td>' +
+        '</tr>';
+      html += '<tr><td colspan="5" style="padding:0;border:none"><div class="detail" id="detail-' + p.id + '"></div></td></tr>';
+    });
+    html += '</tbody></table>';
+    wrap.innerHTML = html;
+
+    wrap.querySelectorAll('.del-person-btn').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        var id = btn.dataset.id;
+        var p = participants.find(function(x){ return x.id === id; });
+        if (!p) return;
+        if (confirm(escapeHtml(p.name) + ' さんのデータを完全に削除します。よろしいですか？')) {
+          participants = participants.filter(function(x){ return x.id !== id; });
+          saveData();
+          renderAll();
+        }
+      });
+    });
+
+    wrap.querySelectorAll('tr.clickable').forEach(function(tr){
+      tr.addEventListener('click', function(){
+        var id = tr.dataset.id;
+        var detail = document.getElementById('detail-' + id);
+        var isOpen = detail.classList.contains('open');
+        wrap.querySelectorAll('.detail').forEach(function(d){ d.classList.remove('open'); });
+        if (!isOpen) {
+          detail.innerHTML = renderPersonDetail(id);
+          detail.classList.add('open');
+          bindDetailDeleteButtons(detail, id);
+        }
+      });
+    });
+  }
+
+  function bindDetailDeleteButtons(detailEl, personId){
+    detailEl.querySelectorAll('.del-visit-btn').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        var visitId = btn.dataset.vid;
+        var p = participants.find(function(x){ return x.id === personId; });
+        if (!p) return;
+        if (confirm('この回の記録を削除します。よろしいですか？')) {
+          p.visits = p.visits.filter(function(v){ return v.id !== visitId; });
+          if (!p.visits.length) {
+            participants = participants.filter(function(x){ return x.id !== personId; });
+          }
+          saveData();
+          renderAll();
+        }
+      });
+    });
+  }
+
+  function renderPersonDetail(id){
+    var p = participants.find(function(x){ return x.id === id; });
+    if (!p) return '';
+    var html = '';
+    var sortedVisits = p.visits.slice().sort(function(a,b){
+      var da = parseDate(a.datetime);
+      var db = parseDate(b.datetime);
+      if (da && db) return da - db;
+      if (da) return -1;
+      if (db) return 1;
+      return 0;
+    });
+    sortedVisits.forEach(function(v, idx){
+      html += '<div class="visit-block">';
+      html += '<h4>第' + (idx+1) + '回｜' + escapeHtml(v.datetime || '日時未登録') +
+        '<button class="secondary del-visit-btn" data-vid="' + v.id + '" style="float:right;padding:2px 10px;font-size:11px">この回を削除</button></h4>';
+      html += '<dl>';
+      var surveyKeys = Object.keys(v.survey || {});
+      if (surveyKeys.length) {
+        surveyKeys.forEach(function(k){
+          html += '<dt>' + escapeHtml(k) + '</dt><dd>' + escapeHtml(v.survey[k]) + '</dd>';
+        });
+      } else {
+        html += '<dt>事前アンケート</dt><dd>登録なし</dd>';
+      }
+      html += '<dt>成約</dt><dd>' + (v.deal === 'yes' ? '成約' : v.deal === 'no' ? '未成約' : '未記入') + '</dd>';
+      html += '<dt>金額</dt><dd>' + escapeHtml(v.amount ? (v.amount + ' 円') : '-') + '</dd>';
+      html += '<dt>メモ</dt><dd>' + escapeHtml(v.memo || '-') + '</dd>';
+      html += '</dl></div>';
+    });
+    return html;
+  }
+
+  function escapeHtml(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
+    });
+  }
+
+  document.getElementById('searchBox').addEventListener('input', renderList);
+
+  // ---------- カレンダータブ ----------
+  var calCursor = new Date();
+  var selectedDateStr = null;
+
+  function parseDate(dtStr){
+    if (!dtStr) return null;
+    var m = dtStr.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})[^\d]*(\d{1,2})?:?(\d{2})?/);
+    if (!m) return null;
+    var d = new Date(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3]), m[4]?parseInt(m[4]):0, m[5]?parseInt(m[5]):0);
+    return d;
+  }
+
+  function dateKey(d){
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+
+  function getEventsByDate(){
+    var map = {};
+    participants.forEach(function(p){
+      p.visits.forEach(function(v){
+        var d = parseDate(v.datetime);
+        if (!d) return;
+        var key = dateKey(d);
+        if (!map[key]) map[key] = [];
+        map[key].push({ person: p, visit: v, date: d });
+      });
+    });
+    return map;
+  }
+
+  function renderCalendar(){
+    var year = calCursor.getFullYear();
+    var month = calCursor.getMonth();
+    document.getElementById('calMonthLabel').textContent = year + '年 ' + (month+1) + '月';
+
+    var eventsByDate = getEventsByDate();
+    var grid = document.getElementById('calGrid');
+    var dows = ['日','月','火','水','木','金','土'];
+    var html = dows.map(function(d){ return '<div class="cal-dow">' + d + '</div>'; }).join('');
+
+    var firstDay = new Date(year, month, 1);
+    var startOffset = firstDay.getDay();
+    var daysInMonth = new Date(year, month+1, 0).getDate();
+
+    for (var i=0;i<startOffset;i++) html += '<div class="cal-day empty"></div>';
+    for (var day=1; day<=daysInMonth; day++){
+      var key = year + '-' + String(month+1).padStart(2,'0') + '-' + String(day).padStart(2,'0');
+      var evs = eventsByDate[key] || [];
+      var cls = 'cal-day' + (evs.length ? ' has-event' : '') + (key === selectedDateStr ? ' selected' : '');
+      html += '<div class="' + cls + '" data-key="' + key + '">' +
+        '<span class="num">' + day + '</span>' +
+        (evs.length ? '<span class="cnt">' + evs.length + '件</span>' : '') +
+        '</div>';
+    }
+    grid.innerHTML = html;
+
+    grid.querySelectorAll('.cal-day:not(.empty)').forEach(function(el){
+      el.addEventListener('click', function(){
+        selectedDateStr = el.dataset.key;
+        renderCalendar();
+        renderDayList(selectedDateStr, eventsByDate[selectedDateStr] || []);
+      });
+    });
+
+    if (selectedDateStr) {
+      renderDayList(selectedDateStr, eventsByDate[selectedDateStr] || []);
+    } else {
+      document.getElementById('dayList').innerHTML = '<p class="empty-msg">日付を選んでください</p>';
+    }
+  }
+
+  function renderDayList(key, evs){
+    var wrap = document.getElementById('dayList');
+    if (!evs.length) {
+      wrap.innerHTML = '<p class="empty-msg">' + key + ' の予約はありません</p>';
+      return;
+    }
+    evs.sort(function(a,b){ return a.date - b.date; });
+    var html = '<p class="small" style="margin-bottom:6px">' + key + ' の予約一覧</p>';
+    evs.forEach(function(e, idx){
+      var timeStr = String(e.date.getHours()).padStart(2,'0') + ':' + String(e.date.getMinutes()).padStart(2,'0');
+      html += '<div class="slot" data-pid="' + e.person.id + '" data-vid="' + e.visit.id + '">' +
+        '<span class="time">' + timeStr + '</span>' +
+        '<span class="name">' + escapeHtml(e.person.name) + '</span>' +
+        '</div>';
+      html += '<div class="detail" id="cal-detail-' + e.visit.id + '"></div>';
+    });
+    wrap.innerHTML = html;
+
+    wrap.querySelectorAll('.slot').forEach(function(slot){
+      slot.addEventListener('click', function(){
+        var vid = slot.dataset.vid;
+        var pid = slot.dataset.pid;
+        var detail = document.getElementById('cal-detail-' + vid);
+        var isOpen = detail.classList.contains('open');
+        wrap.querySelectorAll('.detail').forEach(function(d){ d.classList.remove('open'); });
+        if (!isOpen) {
+          var p = participants.find(function(x){ return x.id === pid; });
+          var v = p.visits.find(function(x){ return x.id === vid; });
+          detail.innerHTML = renderSingleVisitDetail(v);
+          detail.classList.add('open');
+        }
+      });
+    });
+  }
+
+  function renderSingleVisitDetail(v){
+    var html = '<dl>';
+    var keys = Object.keys(v.survey || {});
+    if (keys.length) {
+      keys.forEach(function(k){
+        html += '<dt>' + escapeHtml(k) + '</dt><dd>' + escapeHtml(v.survey[k]) + '</dd>';
+      });
+    } else {
+      html += '<dt>事前アンケート</dt><dd>登録なし</dd>';
+    }
+    html += '<dt>成約</dt><dd>' + (v.deal === 'yes' ? '成約' : v.deal === 'no' ? '未成約' : '未記入') + '</dd>';
+    html += '<dt>金額</dt><dd>' + escapeHtml(v.amount ? (v.amount + ' 円') : '-') + '</dd>';
+    html += '<dt>メモ</dt><dd>' + escapeHtml(v.memo || '-') + '</dd>';
+    html += '</dl>';
+    return html;
+  }
+
+  document.getElementById('prevMonth').addEventListener('click', function(){
+    calCursor.setMonth(calCursor.getMonth()-1);
+    renderCalendar();
+  });
+  document.getElementById('nextMonth').addEventListener('click', function(){
+    calCursor.setMonth(calCursor.getMonth()+1);
+    renderCalendar();
+  });
+
+  // ---------- 個別実施結果 入力 ----------
+  function refreshResultSelectors(){
+    var sel = document.getElementById('resultPersonSelect');
+    sel.innerHTML = '<option value="">参加者を選択</option>' + participants.map(function(p){
+      return '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>';
+    }).join('');
+    document.getElementById('resultVisitSelect').innerHTML = '<option value="">先に参加者を選択</option>';
+    clearResultFields();
+  }
+
+  function clearResultFields(){
+    document.getElementById('resultDealSelect').value = '';
+    document.getElementById('resultAmount').value = '';
+    document.getElementById('resultMemo').value = '';
+  }
+
+  document.getElementById('resultPersonSelect').addEventListener('change', function(){
+    var pid = this.value;
+    var visitSel = document.getElementById('resultVisitSelect');
+    if (!pid) {
+      visitSel.innerHTML = '<option value="">先に参加者を選択</option>';
+      clearResultFields();
+      return;
+    }
+    var p = participants.find(function(x){ return x.id === pid; });
+    visitSel.innerHTML = p.visits.map(function(v, idx){
+      return '<option value="' + v.id + '">第' + (idx+1) + '回｜' + escapeHtml(v.datetime || '日時未登録') + '</option>';
+    }).join('');
+    visitSel.dispatchEvent(new Event('change'));
+  });
+
+  document.getElementById('resultVisitSelect').addEventListener('change', function(){
+    var pid = document.getElementById('resultPersonSelect').value;
+    var vid = this.value;
+    if (!pid || !vid) { clearResultFields(); return; }
+    var p = participants.find(function(x){ return x.id === pid; });
+    var v = p.visits.find(function(x){ return x.id === vid; });
+    document.getElementById('resultDealSelect').value = v.deal || '';
+    document.getElementById('resultAmount').value = v.amount || '';
+    document.getElementById('resultMemo').value = v.memo || '';
+  });
+
+  document.getElementById('saveResultBtn').addEventListener('click', function(){
+    var pid = document.getElementById('resultPersonSelect').value;
+    var vid = document.getElementById('resultVisitSelect').value;
+    if (!pid || !vid) {
+      showStatus('resultStatus', '参加者と回を選択してください', false);
+      return;
+    }
+    var p = participants.find(function(x){ return x.id === pid; });
+    var v = p.visits.find(function(x){ return x.id === vid; });
+    v.deal = document.getElementById('resultDealSelect').value;
+    v.amount = document.getElementById('resultAmount').value.trim();
+    v.memo = document.getElementById('resultMemo').value.trim();
+    saveData();
+    renderAll();
+    showStatus('resultStatus', '保存しました', true);
+  });
+
+  // ---------- バックアップ・再読込 ----------
+  document.getElementById('exportJsonBtn').addEventListener('click', function(){
+    var blob = new Blob([JSON.stringify(participants, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'participants_backup_' + dateKey(new Date()) + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  document.getElementById('reloadBtn').addEventListener('click', loadData);
+
+  document.getElementById('deleteAllBtn').addEventListener('click', function(){
+    if (confirm('登録されている全ての参加者データを完全に削除します。元には戻せません。よろしいですか？')) {
+      if (confirm('本当によろしいですか？（最終確認）')) {
+        participants = [];
+        saveData();
+        renderAll();
+      }
+    }
+  });
+
+  function renderAll(){
+    renderList();
+    if (document.getElementById('panel-calendar').classList.contains('active')) renderCalendar();
+    refreshResultSelectors();
+  }
+
+  loadData();
+})();
+</script>
+</body>
+</html>
