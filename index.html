@@ -271,7 +271,17 @@
     return null;
   }
 
-  function findPerson(name){
+  function normEmail(s){
+    return (s||'').trim().toLowerCase();
+  }
+
+  // メールアドレスが一致すれば最優先、なければ名前（空白除去）で一致を見る
+  function findPerson(name, email){
+    var emailKey = normEmail(email);
+    if (emailKey) {
+      var byEmail = participants.find(function(p){ return normEmail(p.email) === emailKey; });
+      if (byEmail) return byEmail;
+    }
     var key = normName(name);
     return participants.find(function(p){ return normName(p.name) === key; });
   }
@@ -304,6 +314,7 @@
   var nameKeys = ['お名前','名前','氏名'];
   var kanaKeys = ['フリガナ','ふりがな','カナ'];
   var dateKeys = ['日程','予約日時','日時','予約日'];
+  var emailKeys = ['メールアドレス','メール'];
 
   var statusKeys = ['参加状況'];
 
@@ -319,6 +330,7 @@
       var nameCol = findCol(row, nameKeys);
       var kanaCol = findCol(row, kanaKeys);
       var dateCol = findCol(row, dateKeys);
+      var emailCol = findCol(row, emailKeys);
       var name = nameCol ? String(row[nameCol]||'').trim() : '';
       if (!name) { skipped++; return; }
 
@@ -328,6 +340,7 @@
       }
 
       var kana = kanaCol ? String(row[kanaCol]||'').trim() : '';
+      var email = emailCol ? String(row[emailCol]||'').trim() : '';
       var datetime = dateCol ? String(row[dateCol]||'').trim() : '';
 
       var survey = {};
@@ -338,15 +351,16 @@
         survey[normalizeKey(k)] = String(v).trim();
       });
 
-      var person = findPerson(name);
+      var person = findPerson(name, email);
       var isNew = false;
       if (!person) {
-        person = { id: uid(), name: name, kana: kana || toKana(name), visits: [] };
+        person = { id: uid(), name: name, kana: kana || toKana(name), email: email, visits: [] };
         participants.push(person);
         added++;
         isNew = true;
       } else {
         if (kana && !person.kana) person.kana = kana;
+        if (email && !person.email) person.email = email;
       }
 
       // 重複チェック：同じ人・同じ日時の来訪が既にあれば追加しない
@@ -370,14 +384,41 @@
     return { added: added, updated: updated, skipped: skipped, duplicated: duplicated, cancelled: cancelled, total: rows.length };
   }
 
-  // ---- 事前アンケートCSV取込：直近の来訪に紐づけ、なければ新規 ----
+  // ---- 事前アンケートCSV取込：日時が近い来訪に統合、見つからなければ新規 ----
   var answerDateKeys = ['回答日時','回答日'];
+
+  // 来訪の中から、回答日時に最も近い（できれば回答日時より後の）来訪を選ぶ
+  function findBestVisit(person, answerDate){
+    if (!person.visits.length) return null;
+    var withDate = person.visits.filter(function(v){ return parseDate(v.datetime); });
+    if (!withDate.length) {
+      // 日時情報を持つ来訪が一つもなければ、唯一の来訪（または最後の来訪）を使う
+      return person.visits[person.visits.length - 1];
+    }
+    var ansD = parseDate(answerDate);
+    if (!ansD) {
+      // 回答日時が読めない場合は、一番新しい予約に紐づける
+      withDate.sort(function(a,b){ return parseDate(b.datetime) - parseDate(a.datetime); });
+      return withDate[0];
+    }
+    // 回答日時より後（未来）の予約の中で、一番近いものを優先
+    var future = withDate.filter(function(v){ return parseDate(v.datetime) >= ansD; });
+    if (future.length) {
+      future.sort(function(a,b){ return parseDate(a.datetime) - parseDate(b.datetime); });
+      return future[0];
+    }
+    // すべて過去の予約しかなければ、一番近い（最新の）ものを使う
+    withDate.sort(function(a,b){ return parseDate(b.datetime) - parseDate(a.datetime); });
+    return withDate[0];
+  }
 
   function importSurveyRows(rows){
     var linked = 0, newly = 0, skipped = 0, duplicated = 0;
     rows.forEach(function(row){
       var nameCol = findCol(row, nameKeys);
+      var emailCol = findCol(row, emailKeys);
       var name = nameCol ? String(row[nameCol]||'').trim() : '';
+      var email = emailCol ? String(row[emailCol]||'').trim() : '';
       if (!name) { skipped++; return; }
 
       var answerDateCol = findCol(row, answerDateKeys);
@@ -391,7 +432,7 @@
         survey[normalizeKey(k)] = String(v).trim();
       });
 
-      var person = findPerson(name);
+      var person = findPerson(name, email);
 
       // 重複チェック：同じ人のいずれかの来訪に、同じ回答日時のアンケートが既に紐づいていればスキップ
       if (person && answerDate) {
@@ -406,15 +447,16 @@
       }
 
       if (person && person.visits.length) {
-        var lastVisit = person.visits[person.visits.length - 1];
-        // 既存のアンケート内容にマージ（上書きしすぎないよう追加優先）
+        var targetVisit = findBestVisit(person, answerDate);
+        // 既存のアンケート内容にマージ（追加優先、上書きしすぎない）
         Object.keys(survey).forEach(function(k){
-          lastVisit.survey[k] = survey[k];
+          targetVisit.survey[k] = survey[k];
         });
+        if (email && !person.email) person.email = email;
         linked++;
       } else {
         if (!person) {
-          person = { id: uid(), name: name, kana: toKana(name), visits: [] };
+          person = { id: uid(), name: name, kana: toKana(name), email: email, visits: [] };
           participants.push(person);
         }
         person.visits.push({
