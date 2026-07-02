@@ -77,7 +77,12 @@
   .cal-day.selected { border-color: #993556; border-width: 2px; }
   .cal-day .num { font-weight: 500; }
   .cal-day .cnt { font-size: 10px; color: #993556; margin-top: auto; }
-  .day-list { margin-top: 1.2rem; }
+  .day-list { margin-top: 0; max-height: 640px; overflow-y: auto; }
+  .cal-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; }
+  .cal-card, .day-list-card { margin-bottom: 0; }
+  @media (max-width: 860px) {
+    .cal-layout { grid-template-columns: 1fr; }
+  }
   .slot { display: flex; gap: 12px; padding: 10px 4px; border-bottom: 1px solid #ede9df; align-items: flex-start; cursor: pointer; }
   .slot:hover { background: #faf8f3; }
   .slot .time { font-weight: 600; font-size: 13px; min-width: 56px; color: #993556; }
@@ -108,14 +113,18 @@
 
   <!-- カレンダータブ -->
   <div class="panel active" id="panel-calendar">
-    <div class="card">
-      <div class="cal-head">
-        <button class="secondary" id="prevMonth">← 前月</button>
-        <span class="month" id="calMonthLabel"></span>
-        <button class="secondary" id="nextMonth">次月 →</button>
+    <div class="cal-layout">
+      <div class="card cal-card">
+        <div class="cal-head">
+          <button class="secondary" id="prevMonth">← 前月</button>
+          <span class="month" id="calMonthLabel"></span>
+          <button class="secondary" id="nextMonth">次月 →</button>
+        </div>
+        <div class="cal-grid" id="calGrid"></div>
       </div>
-      <div class="cal-grid" id="calGrid"></div>
-      <div class="day-list" id="dayList"></div>
+      <div class="card day-list-card">
+        <div class="day-list" id="dayList"></div>
+      </div>
     </div>
   </div>
 
