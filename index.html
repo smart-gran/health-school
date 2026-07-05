@@ -64,11 +64,11 @@
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
   .cal-head .month { font-size: 16px; font-weight: 600; }
-  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
   .cal-dow { text-align: center; font-size: 11px; color: #8a8880; padding: 4px 0; }
   .cal-day {
-    height: 48px; border: 1px solid #ede9df; border-radius: 6px; padding: 4px;
-    font-size: 11px; cursor: pointer; position: relative; background: #fff;
+    aspect-ratio: 1; border: 1px solid #ede9df; border-radius: 8px; padding: 4px;
+    font-size: 12px; cursor: pointer; position: relative; background: #fff;
     display: flex; flex-direction: column; align-items: flex-start;
   }
   .cal-day.empty { border: none; cursor: default; background: transparent; }
@@ -77,10 +77,9 @@
   .cal-day.selected { border-color: #993556; border-width: 2px; }
   .cal-day .num { font-weight: 500; }
   .cal-day .cnt { font-size: 10px; color: #993556; margin-top: auto; }
-  .day-list { margin-top: 0; max-height: 540px; overflow-y: auto; }
-  .cal-layout { display: grid; grid-template-columns: 55% 43%; gap: 1rem; align-items: start; }
+  .day-list { margin-top: 0; max-height: 640px; overflow-y: auto; }
+  .cal-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; }
   .cal-card, .day-list-card { margin-bottom: 0; }
-  .day-list-card { min-height: 200px; }
   @media (max-width: 860px) {
     .cal-layout { grid-template-columns: 1fr; }
   }
@@ -133,9 +132,16 @@
   <div class="panel" id="panel-list">
     <div class="card">
       <div class="toolbar">
-        <select id="listChallengeSelect" style="max-width:240px"></select>
-        <input type="text" id="searchBox" class="search" placeholder="名前で検索" style="max-width:240px">
+        <select id="listChallengeSelect" style="max-width:220px"></select>
+        <select id="listDealFilter" style="max-width:140px">
+          <option value="">すべての成約状況</option>
+          <option value="yes">成約</option>
+          <option value="no">未成約</option>
+          <option value="none">未記入</option>
+        </select>
+        <input type="text" id="searchBox" class="search" placeholder="名前で検索" style="max-width:200px">
         <span class="small" id="listCount"></span>
+        <button class="secondary" id="exportCsvBtn" style="margin-left:auto">CSVで出力</button>
       </div>
       <div id="listTableWrap"></div>
     </div>
@@ -642,21 +648,34 @@
   });
 
   // ---------- 一覧タブ ----------
-  function renderList(){
+  function getFilteredList(){
     var q = document.getElementById('searchBox').value.trim();
     var challengeFilter = document.getElementById('listChallengeSelect').value;
+    var dealFilter = document.getElementById('listDealFilter').value;
 
-    var list = participants
+    return participants
       .map(function(p){
         var visitsInChallenge = challengeFilter
           ? p.visits.filter(function(v){ return v.challenge === challengeFilter; })
           : p.visits;
-        return { person: p, visits: visitsInChallenge };
+        // 成約フィルター適用
+        var visitsFiltered = dealFilter
+          ? visitsInChallenge.filter(function(v){
+              if (dealFilter === 'none') return !v.deal || v.deal === '';
+              return v.deal === dealFilter;
+            })
+          : visitsInChallenge;
+        return { person: p, visits: visitsFiltered };
       })
       .filter(function(entry){
         if (!entry.visits.length) return false;
         return !q || entry.person.name.indexOf(q) !== -1;
       });
+  }
+
+  function renderList(){
+    var challengeFilter = document.getElementById('listChallengeSelect').value;
+    var list = getFilteredList();
 
     document.getElementById('listCount').textContent = list.length + ' 名';
 
@@ -743,9 +762,15 @@
       var sel = (v.deal || '') === opt ? ' selected' : '';
       return '<option value="' + opt + '"' + sel + '>' + label + '</option>';
     }).join('');
+    var payOptions = ['', 'card', 'transfer'].map(function(opt){
+      var label = opt === 'card' ? 'カード' : opt === 'transfer' ? '振込' : '未記入';
+      var sel = (v.payment || '') === opt ? ' selected' : '';
+      return '<option value="' + opt + '"' + sel + '>' + label + '</option>';
+    }).join('');
     var html = '<div class="result-editor" data-vid="' + v.id + '">';
     html += '<div class="field-row"><label>成約</label><select class="deal-input" style="flex:1">' + dealOptions + '</select></div>';
     html += '<div class="field-row"><label>金額（円）</label><input type="text" class="amount-input" style="flex:1" value="' + escapeHtml(v.amount || '') + '" placeholder="例 98000"></div>';
+    html += '<div class="field-row"><label>支払い方法</label><select class="payment-input" style="flex:1">' + payOptions + '</select></div>';
     html += '<div class="field-row" style="align-items:flex-start"><label>簡易メモ</label><textarea class="memo-input" style="flex:1; min-height:60px">' + escapeHtml(v.memo || '') + '</textarea></div>';
     html += '<div class="row"><button class="save-result-btn" data-vid="' + v.id + '">この回の内容を保存</button></div>';
     html += '<div class="status-msg" id="result-status-' + v.id + '"></div>';
@@ -796,6 +821,7 @@
         if (!v) return;
         v.deal = editor.querySelector('.deal-input').value;
         v.amount = editor.querySelector('.amount-input').value.trim();
+        v.payment = editor.querySelector('.payment-input').value;
         v.memo = editor.querySelector('.memo-input').value.trim();
         saveData();
         showStatus('result-status-' + vid, '保存しました', true);
@@ -810,6 +836,47 @@
   }
 
   document.getElementById('searchBox').addEventListener('input', renderList);
+  document.getElementById('listDealFilter').addEventListener('change', renderList);
+
+  document.getElementById('exportCsvBtn').addEventListener('click', function(){
+    var list = getFilteredList();
+    if (!list.length) {
+      alert('出力対象のデータがありません');
+      return;
+    }
+    var rows = [['名前', '予約日時', 'チャレンジ', '成約', '金額（円）', '支払い方法', 'メモ']];
+    list.forEach(function(entry){
+      entry.visits.forEach(function(v){
+        var deal = v.deal === 'yes' ? '成約' : v.deal === 'no' ? '未成約' : '未記入';
+        var payment = v.payment === 'card' ? 'カード' : v.payment === 'transfer' ? '振込' : '';
+        rows.push([
+          entry.person.name,
+          v.datetime || '',
+          v.challenge || '',
+          deal,
+          v.amount || '',
+          payment,
+          v.memo || ''
+        ]);
+      });
+    });
+    var csv = rows.map(function(row){
+      return row.map(function(cell){
+        var s = String(cell).replace(/"/g, '""');
+        return '"' + s + '"';
+      }).join(',');
+    }).join('\r\n');
+    // BOM付きUTF-8でExcelが文字化けしないように
+    var bom = '\uFEFF';
+    var blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    var now = new Date();
+    a.download = '個別相談_' + now.getFullYear() + String(now.getMonth()+1).padStart(2,'0') + String(now.getDate()).padStart(2,'0') + '.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
 
   // ---------- カレンダータブ ----------
   var calCursor = new Date();
