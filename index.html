@@ -50,6 +50,7 @@
   .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 500; }
   .badge.ok { background: #e1f5ee; color: #04342c; }
   .badge.no { background: #f1efe8; color: #5f5e5a; }
+  .badge.warn { background: #fff3cd; color: #7a4f00; }
   .search { margin-bottom: .8rem; }
   .detail {
     display: none; background: #faf8f3; border: 1px solid #ede9df; border-radius: 10px;
@@ -695,8 +696,14 @@
         if (lastVisit.deal === 'yes') dealBadge = '<span class="badge ok">成約</span>';
         else if (lastVisit.deal === 'no') dealBadge = '<span class="badge no">未成約</span>';
       }
+      // アンケート未回答チェック：表示中の来訪すべてでsurveyが空なら「アンケート未」
+      var hasAnket = visits.some(function(v){
+        return v.survey && Object.keys(v.survey).length > 0;
+      });
+      var anketBadge = hasAnket ? '' : '<span class="badge warn" style="margin-left:6px">アンケート未</span>';
+
       html += '<tr class="clickable" data-id="' + p.id + '">' +
-        '<td>' + escapeHtml(p.name) + '</td>' +
+        '<td>' + escapeHtml(p.name) + anketBadge + '</td>' +
         '<td>' + visits.length + '回</td>' +
         '<td>' + escapeHtml(lastVisit ? lastVisit.datetime : '-') + '</td>' +
         '<td>' + dealBadge + '</td>' +
