@@ -528,6 +528,18 @@
     return { linked: linked, newly: newly, skipped: skipped, duplicated: duplicated, total: rows.length };
   }
 
+  // アンケート特有の列名（予約管理CSVには存在しない列）
+  var surveyOnlyKeys = ['回答日時', 'ご年齢', 'LINE登録名', '現在、最も困っている体・心の不調を3つ', '7日間で「一番変化を感じたこと」は何ですか？', '半年後、体と生活がどうなっていたら理想ですか？'];
+
+  function visitHasSurvey(v){
+    if (v.hasSurvey) return true;
+    if (!v.survey) return false;
+    var keys = Object.keys(v.survey);
+    return surveyOnlyKeys.some(function(sk){
+      return keys.some(function(k){ return k.indexOf(sk) !== -1; });
+    });
+  }
+
   function finishImport(){
     participants.sort(function(a,b){ return (a.kana||a.name).localeCompare(b.kana||b.name, 'ja'); });
     saveData();
@@ -699,7 +711,7 @@
         else if (lastVisit.deal === 'no') dealBadge = '<span class="badge no">未成約</span>';
       }
       // アンケート未回答チェック：hasSurveyフラグが立っていない来訪しかなければ「アンケート未」
-      var hasAnket = visits.some(function(v){ return v.hasSurvey; });
+      var hasAnket = visits.some(function(v){ return visitHasSurvey(v); });
       var anketBadge = hasAnket ? '' : '<span class="badge warn" style="margin-left:6px">アンケート未</span>';
 
       html += '<tr class="clickable" data-id="' + p.id + '">' +
@@ -966,7 +978,7 @@
     var html = '<p class="small" style="margin-bottom:6px">' + key + ' の予約一覧</p>';
     evs.forEach(function(e, idx){
       var timeStr = String(e.date.getHours()).padStart(2,'0') + ':' + String(e.date.getMinutes()).padStart(2,'0');
-      var slotAnketBadge = e.visit.hasSurvey ? '' : '<span class="badge warn" style="margin-left:6px;font-size:10px">アンケート未</span>';
+      var slotAnketBadge = visitHasSurvey(e.visit) ? '' : '<span class="badge warn" style="margin-left:6px;font-size:10px">アンケート未</span>';
       html += '<div class="slot" data-pid="' + e.person.id + '" data-vid="' + e.visit.id + '">' +
         '<span class="time">' + timeStr + '</span>' +
         '<span class="name">' + escapeHtml(e.person.name) + slotAnketBadge + '</span>' +
