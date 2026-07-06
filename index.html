@@ -503,6 +503,7 @@
         Object.keys(survey).forEach(function(k){
           targetVisit.survey[k] = survey[k];
         });
+        targetVisit.hasSurvey = true;
         if (email && !person.email) person.email = email;
         linked++;
       } else {
@@ -514,6 +515,7 @@
           id: vuid(),
           datetime: '',
           survey: survey,
+          hasSurvey: true,
           deal: '',
           amount: '',
           memo: '',
@@ -696,10 +698,8 @@
         if (lastVisit.deal === 'yes') dealBadge = '<span class="badge ok">成約</span>';
         else if (lastVisit.deal === 'no') dealBadge = '<span class="badge no">未成約</span>';
       }
-      // アンケート未回答チェック：表示中の来訪すべてでsurveyが空なら「アンケート未」
-      var hasAnket = visits.some(function(v){
-        return v.survey && Object.keys(v.survey).length > 0;
-      });
+      // アンケート未回答チェック：hasSurveyフラグが立っていない来訪しかなければ「アンケート未」
+      var hasAnket = visits.some(function(v){ return v.hasSurvey; });
       var anketBadge = hasAnket ? '' : '<span class="badge warn" style="margin-left:6px">アンケート未</span>';
 
       html += '<tr class="clickable" data-id="' + p.id + '">' +
