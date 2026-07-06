@@ -966,9 +966,10 @@
     var html = '<p class="small" style="margin-bottom:6px">' + key + ' の予約一覧</p>';
     evs.forEach(function(e, idx){
       var timeStr = String(e.date.getHours()).padStart(2,'0') + ':' + String(e.date.getMinutes()).padStart(2,'0');
+      var slotAnketBadge = e.visit.hasSurvey ? '' : '<span class="badge warn" style="margin-left:6px;font-size:10px">アンケート未</span>';
       html += '<div class="slot" data-pid="' + e.person.id + '" data-vid="' + e.visit.id + '">' +
         '<span class="time">' + timeStr + '</span>' +
-        '<span class="name">' + escapeHtml(e.person.name) + '</span>' +
+        '<span class="name">' + escapeHtml(e.person.name) + slotAnketBadge + '</span>' +
         '</div>';
       html += '<div class="detail" id="cal-detail-' + e.visit.id + '"></div>';
     });
