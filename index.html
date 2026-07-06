@@ -528,15 +528,16 @@
     return { linked: linked, newly: newly, skipped: skipped, duplicated: duplicated, total: rows.length };
   }
 
-  // アンケート特有の列名（予約管理CSVには存在しない列）
-  var surveyOnlyKeys = ['回答日時', 'ご年齢', 'LINE登録名', '現在、最も困っている体・心の不調を3つ', '7日間で「一番変化を感じたこと」は何ですか？', '半年後、体と生活がどうなっていたら理想ですか？'];
+  // 予約管理CSVの列名（これ以外のsurveyキーがあればアンケートありと判定）
+  var reserveCsvKeys = ['申込日時', '日程', '担当者', '参加URL', '参加状況', '成約状況', 'キャンセル理由', 'メールアドレス', '電話番号', 'フリガナ', 'お名前'];
 
   function visitHasSurvey(v){
     if (v.hasSurvey) return true;
     if (!v.survey) return false;
     var keys = Object.keys(v.survey);
-    return surveyOnlyKeys.some(function(sk){
-      return keys.some(function(k){ return k.indexOf(sk) !== -1; });
+    // 予約管理CSV以外のキーが1つでもあればアンケートありと判定
+    return keys.some(function(k){
+      return !reserveCsvKeys.some(function(rk){ return k === rk; });
     });
   }
 
