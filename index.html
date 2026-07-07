@@ -248,6 +248,8 @@
       }
       // 既存データに challenges が無い場合の保険：来訪に書かれているchallenge名を拾い集める
       ensureChallengesFromVisits();
+      // 旧データの互換処理：来訪のsurveyにアンケートが残っていればperson.surveyに移行
+      migrateSurveyToPersonLevel();
       isLoaded = true;
       renderAll();
     }, function(err){
@@ -265,6 +267,30 @@
       });
     });
     challenges = Object.keys(set);
+  }
+
+  // 旧データ互換：来訪のsurveyに残っているアンケートデータをperson.surveyに移行する
+  function migrateSurveyToPersonLevel(){
+    var needsSave = false;
+    participants.forEach(function(p){
+      if (p.survey && Object.keys(p.survey).length > 0) return; // すでにperson.surveyがあればスキップ
+      p.visits.forEach(function(v){
+        if (!v.survey) return;
+        var hasNonReserve = Object.keys(v.survey).some(function(k){
+          return !reserveCsvKeys.some(function(rk){ return k === rk; });
+        });
+        if (hasNonReserve) {
+          if (!p.survey) p.survey = {};
+          Object.keys(v.survey).forEach(function(k){
+            if (!reserveCsvKeys.some(function(rk){ return k === rk; })) {
+              p.survey[k] = v.survey[k];
+            }
+          });
+          needsSave = true;
+        }
+      });
+    });
+    if (needsSave) saveData();
   }
 
   async function saveData(){
