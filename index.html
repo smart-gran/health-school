@@ -485,42 +485,27 @@
 
       var person = findPerson(name, email);
 
-      // 重複チェック：同じ人のいずれかの来訪に、同じ回答日時のアンケートが既に紐づいていればスキップ
-      if (person && answerDate) {
-        var already = person.visits.some(function(v){
-          var ansKey = answerDateCol ? normalizeKey(answerDateCol) : null;
-          return ansKey && v.survey && v.survey[ansKey] === answerDate;
-        });
-        if (already) {
+      // 重複チェック：同じ人に同じ回答日時のアンケートが既に入っていればスキップ
+      if (person && answerDate && person.survey) {
+        var ansKey = answerDateCol ? normalizeKey(answerDateCol) : null;
+        if (ansKey && person.survey[ansKey] === answerDate) {
           duplicated++;
           return;
         }
       }
 
-      if (person && person.visits.length) {
-        var targetVisit = findBestVisit(person, answerDate, challengeName);
-        // 既存のアンケート内容にマージ（追加優先、上書きしすぎない）
+      if (person) {
+        // アンケートを人単位で保存（上書きマージ）
+        if (!person.survey) person.survey = {};
         Object.keys(survey).forEach(function(k){
-          targetVisit.survey[k] = survey[k];
+          person.survey[k] = survey[k];
         });
-        targetVisit.hasSurvey = true;
         if (email && !person.email) person.email = email;
         linked++;
       } else {
-        if (!person) {
-          person = { id: uid(), name: name, kana: toKana(name), email: email, visits: [] };
-          participants.push(person);
-        }
-        person.visits.push({
-          id: vuid(),
-          datetime: '',
-          survey: survey,
-          hasSurvey: true,
-          deal: '',
-          amount: '',
-          memo: '',
-          challenge: challengeName || ''
-        });
+        // 予約管理CSVに登録がない人を新規作成
+        person = { id: uid(), name: name, kana: toKana(name), email: email, survey: survey, visits: [] };
+        participants.push(person);
         newly++;
       }
     });
@@ -528,15 +513,21 @@
     return { linked: linked, newly: newly, skipped: skipped, duplicated: duplicated, total: rows.length };
   }
 
-  // 予約管理CSVの列名（これ以外のsurveyキーがあればアンケートありと判定）
+  // 予約管理CSVの列名（これ以外のキーがperson.surveyにあればアンケートありと判定）
   var reserveCsvKeys = ['申込日時', '日程', '担当者', '参加URL', '参加状況', '成約状況', 'キャンセル理由', 'メールアドレス', '電話番号', 'フリガナ', 'お名前'];
 
-  function visitHasSurvey(v){
-    if (v.hasSurvey) return true;
-    if (!v.survey) return false;
-    var keys = Object.keys(v.survey);
-    // 予約管理CSV以外のキーが1つでもあればアンケートありと判定
-    return keys.some(function(k){
+  function personHasSurvey(person){
+    if (!person.survey) {
+      // 旧データ互換：来訪のsurveyにアンケート特有キーがあればありと判定
+      return person.visits.some(function(v){
+        if (v.hasSurvey) return true;
+        if (!v.survey) return false;
+        return Object.keys(v.survey).some(function(k){
+          return !reserveCsvKeys.some(function(rk){ return k === rk; });
+        });
+      });
+    }
+    return Object.keys(person.survey).some(function(k){
       return !reserveCsvKeys.some(function(rk){ return k === rk; });
     });
   }
@@ -711,8 +702,7 @@
         if (lastVisit.deal === 'yes') dealBadge = '<span class="badge ok">成約</span>';
         else if (lastVisit.deal === 'no') dealBadge = '<span class="badge no">未成約</span>';
       }
-      // アンケート未回答チェック：hasSurveyフラグが立っていない来訪しかなければ「アンケート未」
-      var hasAnket = visits.some(function(v){ return visitHasSurvey(v); });
+      var hasAnket = personHasSurvey(p);
       var anketBadge = hasAnket ? '' : '<span class="badge warn" style="margin-left:6px">アンケート未</span>';
 
       html += '<tr class="clickable" data-id="' + p.id + '">' +
@@ -802,6 +792,33 @@
     var p = participants.find(function(x){ return x.id === id; });
     if (!p) return '';
     var html = '';
+
+    // アンケートは人単位で表示（旧データ互換：person.surveyがなければ最初の来訪のsurveyから表示）
+    var personSurvey = p.survey || null;
+    if (!personSurvey) {
+      // 旧データ：来訪のsurveyからアンケート特有のものを探す
+      p.visits.forEach(function(v){
+        if (!personSurvey && v.survey) {
+          var hasNonReserve = Object.keys(v.survey).some(function(k){
+            return !reserveCsvKeys.some(function(rk){ return k === rk; });
+          });
+          if (hasNonReserve) personSurvey = v.survey;
+        }
+      });
+    }
+
+    // アンケートセクションを一番上に表示
+    html += '<div class="visit-block" style="background:#fff8f0;border-color:#f5c8a0">';
+    html += '<h4 style="margin-bottom:6px">事前アンケート</h4><dl>';
+    if (personSurvey && Object.keys(personSurvey).length) {
+      Object.keys(personSurvey).forEach(function(k){
+        html += '<dt>' + escapeHtml(k) + '</dt><dd>' + escapeHtml(personSurvey[k]) + '</dd>';
+      });
+    } else {
+      html += '<dt>事前アンケート</dt><dd>登録なし</dd>';
+    }
+    html += '</dl></div>';
+
     var sortedVisits = p.visits.slice().sort(function(a,b){
       var da = parseDate(a.datetime);
       var db = parseDate(b.datetime);
@@ -814,16 +831,6 @@
       html += '<div class="visit-block">';
       html += '<h4>第' + (idx+1) + '回｜' + escapeHtml(v.datetime || '日時未登録') +
         '<button class="secondary del-visit-btn" data-vid="' + v.id + '" style="float:right;padding:2px 10px;font-size:11px">この回を削除</button></h4>';
-      html += '<dl>';
-      var surveyKeys = Object.keys(v.survey || {});
-      if (surveyKeys.length) {
-        surveyKeys.forEach(function(k){
-          html += '<dt>' + escapeHtml(k) + '</dt><dd>' + escapeHtml(v.survey[k]) + '</dd>';
-        });
-      } else {
-        html += '<dt>事前アンケート</dt><dd>登録なし</dd>';
-      }
-      html += '</dl>';
       html += renderResultEditor(v);
       html += '</div>';
     });
@@ -979,7 +986,7 @@
     var html = '<p class="small" style="margin-bottom:6px">' + key + ' の予約一覧</p>';
     evs.forEach(function(e, idx){
       var timeStr = String(e.date.getHours()).padStart(2,'0') + ':' + String(e.date.getMinutes()).padStart(2,'0');
-      var slotAnketBadge = visitHasSurvey(e.visit) ? '' : '<span class="badge warn" style="margin-left:6px;font-size:10px">アンケート未</span>';
+      var slotAnketBadge = personHasSurvey(e.person) ? '' : '<span class="badge warn" style="margin-left:6px;font-size:10px">アンケート未</span>';
       html += '<div class="slot" data-pid="' + e.person.id + '" data-vid="' + e.visit.id + '">' +
         '<span class="time">' + timeStr + '</span>' +
         '<span class="name">' + escapeHtml(e.person.name) + slotAnketBadge + '</span>' +
@@ -998,7 +1005,7 @@
         if (!isOpen) {
           var p = participants.find(function(x){ return x.id === pid; });
           var v = p.visits.find(function(x){ return x.id === vid; });
-          detail.innerHTML = renderSingleVisitDetail(v);
+          detail.innerHTML = renderSingleVisitDetail(v, p);
           detail.classList.add('open');
           bindResultEditors(detail, pid);
         }
@@ -1006,12 +1013,19 @@
     });
   }
 
-  function renderSingleVisitDetail(v){
+  function renderSingleVisitDetail(v, person){
     var html = '<dl>';
-    var keys = Object.keys(v.survey || {});
-    if (keys.length) {
-      keys.forEach(function(k){
-        html += '<dt>' + escapeHtml(k) + '</dt><dd>' + escapeHtml(v.survey[k]) + '</dd>';
+    // アンケートは人単位で表示（旧データ互換：person.surveyがなければ来訪のsurveyを使う）
+    var personSurvey = (person && person.survey) ? person.survey : null;
+    if (!personSurvey && v.survey) {
+      var hasNonReserve = Object.keys(v.survey).some(function(k){
+        return !reserveCsvKeys.some(function(rk){ return k === rk; });
+      });
+      if (hasNonReserve) personSurvey = v.survey;
+    }
+    if (personSurvey && Object.keys(personSurvey).length) {
+      Object.keys(personSurvey).forEach(function(k){
+        html += '<dt>' + escapeHtml(k) + '</dt><dd>' + escapeHtml(personSurvey[k]) + '</dd>';
       });
     } else {
       html += '<dt>事前アンケート</dt><dd>登録なし</dd>';
