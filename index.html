@@ -138,6 +138,7 @@
           <option value="">すべての成約状況</option>
           <option value="yes">成約</option>
           <option value="no">未成約</option>
+          <option value="hold">保留</option>
           <option value="none">未記入</option>
         </select>
         <input type="text" id="searchBox" class="search" placeholder="名前で検索" style="max-width:200px">
@@ -727,6 +728,7 @@
       if (lastVisit) {
         if (lastVisit.deal === 'yes') dealBadge = '<span class="badge ok">成約</span>';
         else if (lastVisit.deal === 'no') dealBadge = '<span class="badge no">未成約</span>';
+        else if (lastVisit.deal === 'hold') dealBadge = '<span class="badge" style="background:#e8f0fe;color:#1a56a0">保留</span>';
       }
       var hasAnket = personHasSurvey(p);
       var anketBadge = hasAnket ? '' : '<span class="badge warn" style="margin-left:6px">アンケート未</span>';
@@ -793,8 +795,8 @@
   }
 
   function renderResultEditor(v){
-    var dealOptions = ['', 'yes', 'no'].map(function(opt){
-      var label = opt === 'yes' ? '成約' : opt === 'no' ? '未成約' : '未記入';
+    var dealOptions = ['', 'yes', 'no', 'hold'].map(function(opt){
+      var label = opt === 'yes' ? '成約' : opt === 'no' ? '未成約' : opt === 'hold' ? '保留' : '未記入';
       var sel = (v.deal || '') === opt ? ' selected' : '';
       return '<option value="' + opt + '"' + sel + '>' + label + '</option>';
     }).join('');
@@ -900,7 +902,7 @@
     var rows = [['名前', '予約日時', 'チャレンジ', '成約', '金額（円）', '支払い方法', 'メモ']];
     list.forEach(function(entry){
       entry.visits.forEach(function(v){
-        var deal = v.deal === 'yes' ? '成約' : v.deal === 'no' ? '未成約' : '未記入';
+        var deal = v.deal === 'yes' ? '成約' : v.deal === 'no' ? '未成約' : v.deal === 'hold' ? '保留' : '未記入';
         var payment = v.payment === 'card' ? 'カード' : v.payment === 'transfer' ? '振込' : '';
         rows.push([
           entry.person.name,
