@@ -139,6 +139,7 @@
           <option value="yes">成約</option>
           <option value="no">未成約</option>
           <option value="hold">保留</option>
+          <option value="waiting">支払い待ち</option>
           <option value="none">未記入</option>
         </select>
         <input type="text" id="searchBox" class="search" placeholder="名前で検索" style="max-width:200px">
@@ -729,6 +730,7 @@
         if (lastVisit.deal === 'yes') dealBadge = '<span class="badge ok">成約</span>';
         else if (lastVisit.deal === 'no') dealBadge = '<span class="badge no">未成約</span>';
         else if (lastVisit.deal === 'hold') dealBadge = '<span class="badge" style="background:#e8f0fe;color:#1a56a0">保留</span>';
+        else if (lastVisit.deal === 'waiting') dealBadge = '<span class="badge" style="background:#fff3cd;color:#7a4f00">支払い待ち</span>';
       }
       var hasAnket = personHasSurvey(p);
       var anketBadge = hasAnket ? '' : '<span class="badge warn" style="margin-left:6px">アンケート未</span>';
@@ -795,15 +797,15 @@
   }
 
   function renderResultEditor(v){
-    var dealOptions = ['', 'yes', 'no', 'hold'].map(function(opt){
-      var label = opt === 'yes' ? '成約' : opt === 'no' ? '未成約' : opt === 'hold' ? '保留' : '未記入';
+    var dealOptions = ['', 'yes', 'no', 'hold', 'waiting'].map(function(opt){
+      var label = opt === 'yes' ? '成約' : opt === 'no' ? '未成約' : opt === 'hold' ? '保留' : opt === 'waiting' ? '支払い待ち' : '未記入';
       var sel = (v.deal || '') === opt ? ' selected' : '';
       return '<option value="' + opt + '"' + sel + '>' + label + '</option>';
     }).join('');
-    var payOptions = ['', 'card', 'transfer'].map(function(opt){
-      var label = opt === 'card' ? 'カード' : opt === 'transfer' ? '振込' : '未記入';
+    var payMap = { '': '未記入', 'lump_transfer': '一括振込', 'lump_card': '一括カード', 'split_transfer': '分割振込', 'split_card': '分割カード' };
+    var payOptions = Object.keys(payMap).map(function(opt){
       var sel = (v.payment || '') === opt ? ' selected' : '';
-      return '<option value="' + opt + '"' + sel + '>' + label + '</option>';
+      return '<option value="' + opt + '"' + sel + '>' + payMap[opt] + '</option>';
     }).join('');
     var html = '<div class="result-editor" data-vid="' + v.id + '">';
     html += '<div class="field-row"><label>成約</label><select class="deal-input" style="flex:1">' + dealOptions + '</select></div>';
@@ -902,8 +904,9 @@
     var rows = [['名前', '予約日時', 'チャレンジ', '成約', '金額（円）', '支払い方法', 'メモ']];
     list.forEach(function(entry){
       entry.visits.forEach(function(v){
-        var deal = v.deal === 'yes' ? '成約' : v.deal === 'no' ? '未成約' : v.deal === 'hold' ? '保留' : '未記入';
-        var payment = v.payment === 'card' ? 'カード' : v.payment === 'transfer' ? '振込' : '';
+        var deal = v.deal === 'yes' ? '成約' : v.deal === 'no' ? '未成約' : v.deal === 'hold' ? '保留' : v.deal === 'waiting' ? '支払い待ち' : '未記入';
+        var payLabel = { 'lump_transfer': '一括振込', 'lump_card': '一括カード', 'split_transfer': '分割振込', 'split_card': '分割カード', 'card': 'カード', 'transfer': '振込' };
+        var payment = payLabel[v.payment] || '';
         rows.push([
           entry.person.name,
           v.datetime || '',
@@ -1015,9 +1018,10 @@
     evs.forEach(function(e, idx){
       var timeStr = String(e.date.getHours()).padStart(2,'0') + ':' + String(e.date.getMinutes()).padStart(2,'0');
       var slotAnketBadge = personHasSurvey(e.person) ? '' : '<span class="badge warn" style="margin-left:6px;font-size:10px">アンケート未</span>';
+      var emailStr = e.person.email ? '<span style="font-size:11px;color:#8a8880;margin-left:8px">' + escapeHtml(e.person.email) + '</span>' : '';
       html += '<div class="slot" data-pid="' + e.person.id + '" data-vid="' + e.visit.id + '">' +
         '<span class="time">' + timeStr + '</span>' +
-        '<span class="name">' + escapeHtml(e.person.name) + slotAnketBadge + '</span>' +
+        '<span class="name">' + escapeHtml(e.person.name) + slotAnketBadge + emailStr + '</span>' +
         '</div>';
       html += '<div class="detail" id="cal-detail-' + e.visit.id + '"></div>';
     });
