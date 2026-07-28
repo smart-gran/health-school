@@ -1,1 +1,280 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>講義出欠管理</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap');
+  :root {
+    --aqua:#17b6ac; --aqua-deep:#0b6f6a; --aqua-ink:#0a4a48;
+    --aqua-soft:#d6f2ef; --aqua-mist:#eefaf8; --bg:#f3fbfa; --card:#fff; --line:#d5e8e6;
+    --present:#17a06a; --present-bg:#e2f5ec; --absent:#d6685f; --absent-bg:#fbe9e7;
+    --muted:#7a938f; --shadow:0 6px 24px rgba(11,111,106,.10);
+  }
+  *{box-sizing:border-box} html,body{margin:0}
+  body{font-family:"Zen Kaku Gothic New",system-ui,sans-serif;background:var(--bg);color:var(--aqua-ink);line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:860px;margin:0 auto;padding:20px 16px 64px}
+  header.app{display:flex;align-items:center;gap:12px;padding:18px 20px;background:linear-gradient(135deg,var(--aqua),var(--aqua-deep));color:#fff;border-radius:18px;box-shadow:var(--shadow)}
+  header.app .mark{width:40px;height:40px;border-radius:12px;flex:none;background:rgba(255,255,255,.22);display:grid;place-items:center;font-size:20px}
+  header.app h1{font-family:"M PLUS Rounded 1c",sans-serif;font-weight:800;font-size:20px;margin:0;letter-spacing:.02em}
+  header.app p{margin:0;font-size:12.5px;opacity:.9}
+  .tabs{display:flex;gap:8px;margin:18px 0}
+  .tab{flex:1;padding:11px 8px;cursor:pointer;font-family:"M PLUS Rounded 1c",sans-serif;font-weight:700;font-size:15px;background:#fff;color:var(--aqua-deep);border:1.5px solid var(--line);border-radius:12px;transition:.15s}
+  .tab[aria-selected="true"]{background:var(--aqua-deep);color:#fff;border-color:var(--aqua-deep);box-shadow:var(--shadow)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;margin-bottom:16px;box-shadow:var(--shadow)}
+  .card h2{font-family:"M PLUS Rounded 1c",sans-serif;font-weight:800;font-size:16px;margin:0 0 4px;color:var(--aqua-deep);display:flex;align-items:center;gap:8px}
+  .card h2 .n{width:22px;height:22px;border-radius:7px;font-size:12px;background:var(--aqua-soft);color:var(--aqua-deep);display:grid;place-items:center;flex:none}
+  .hint{color:var(--muted);font-size:12.5px;margin:0 0 14px}
+  input,select,textarea{width:100%;padding:10px 12px;font-size:15px;font-family:inherit;color:var(--aqua-ink);border:1.5px solid var(--line);border-radius:10px;background:#fff}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--aqua);border-color:var(--aqua)}
+  textarea{min-height:84px;resize:vertical}
+  .row{display:flex;gap:8px} .row>*{min-width:0} .grow{flex:1}
+  button.btn{font-family:"M PLUS Rounded 1c",sans-serif;font-weight:700;font-size:14px;padding:10px 16px;border-radius:10px;cursor:pointer;border:none;background:var(--aqua);color:#fff;transition:.15s}
+  button.btn:hover{background:var(--aqua-deep)}
+  button.btn.ghost{background:#fff;color:var(--aqua-deep);border:1.5px solid var(--line)} button.btn.ghost:hover{background:var(--aqua-mist)}
+  button.btn.sm{padding:6px 10px;font-size:12.5px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .chip{display:inline-flex;align-items:center;gap:8px;background:var(--aqua-mist);border:1px solid var(--aqua-soft);border-radius:999px;padding:5px 6px 5px 13px;font-size:13.5px;font-weight:500}
+  .chip button{border:none;background:none;cursor:pointer;color:var(--muted);font-size:16px;line-height:1;padding:0 4px} .chip button:hover{color:var(--absent)}
+  .empty{color:var(--muted);font-size:13px;padding:6px 0}
+  .tablewrap{overflow-x:auto;margin-top:6px;border:1px solid var(--line);border-radius:12px}
+  table{border-collapse:collapse;width:100%;font-size:14px}
+  th,td{padding:10px 12px;text-align:center;border-bottom:1px solid var(--line);white-space:nowrap}
+  thead th{background:var(--aqua-mist);color:var(--aqua-deep);font-family:"M PLUS Rounded 1c",sans-serif;font-weight:700;font-size:13px}
+  tbody th{text-align:left;font-weight:700;color:var(--aqua-ink);background:#fbfefe;position:sticky;left:0}
+  td .o{color:var(--present);font-weight:800;font-size:18px} td .x{color:var(--absent);font-weight:800;font-size:18px} td .dash{color:#c7d8d5}
+  tbody tr:last-child th,tbody tr:last-child td{border-bottom:none}
+  .lecrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px;border:1.5px solid var(--line);border-radius:12px;margin-bottom:10px}
+  .lecrow.done{background:var(--aqua-mist);border-color:var(--aqua-soft)}
+  .lecrow .date{font-weight:700;font-family:"M PLUS Rounded 1c",sans-serif}
+  .lecrow .lbl{color:var(--muted);font-size:12.5px}
+  .pick{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .pick button{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:6px 16px;font-weight:700;font-size:14px;cursor:pointer;font-family:"M PLUS Rounded 1c",sans-serif;color:var(--muted);transition:.12s}
+  .pick button.on-o{background:var(--present-bg);border-color:var(--present);color:var(--present)}
+  .pick button.on-x{background:var(--absent-bg);border-color:var(--absent);color:var(--absent)}
+  .pick button:disabled{cursor:default;opacity:1}
+  .pick button.off:disabled{opacity:.4}
+  .pick button.chg{padding:6px 12px;border-style:dashed;color:var(--aqua-deep);border-color:var(--aqua)}
+  .pick button.chg:hover{background:var(--aqua-mist)}
+  .subrow{margin-top:14px;text-align:right}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--aqua-ink);color:#fff;padding:12px 22px;border-radius:12px;font-weight:700;font-size:14px;box-shadow:0 8px 30px rgba(0,0,0,.2);opacity:0;pointer-events:none;transition:.25s;z-index:10}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .stat{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+  .stat div{background:var(--aqua-mist);border-radius:10px;padding:8px 14px;font-size:13px;font-weight:700;color:var(--aqua-deep)}
+  .stat div span{font-size:18px;font-family:"M PLUS Rounded 1c",sans-serif}
+  .loading{text-align:center;color:var(--muted);padding:24px;font-size:14px}
+  .danger{color:var(--absent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="app">
+    <div class="mark">🌿</div>
+    <div><h1>講義 出欠管理</h1><p>受講生・講義日を登録し、出欠を集計します</p></div>
+  </header>
+  <div class="tabs">
+    <button class="tab" id="tabStudent" aria-selected="true" onclick="switchTab('student')">受講生 出欠フォーム</button>
+    <button class="tab" id="tabAdmin" aria-selected="false" onclick="switchTab('admin')">管理者 設定・集計</button>
+  </div>
+  <div id="view" class="loading">読み込み中…</div>
+</div>
+<div class="toast" id="toast"></div>
 
+<script>
+/* ===== Firebase（健康スクールと同じプロジェクト・別コレクション） ===== */
+const firebaseConfig = {
+  apiKey: "AIzaSyDfZ2SFmj2arUWoOFvw0jyn_1_ben-pfO0",
+  authDomain: "health-school-9d414.firebaseapp.com",
+  projectId: "health-school-9d414",
+  storageBucket: "health-school-9d414.firebasestorage.app",
+  messagingSenderId: "1090225614999",
+  appId: "1:1090225614999:web:2b087b4d5e0add606279d2"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const DROSTER = db.collection('lecture_app').doc('roster'); // { students:[], lectures:[] }
+const CATT = db.collection('lecture_att');                  // doc(studentId) = { marks:{ lectureId:'present'|'absent' } }
+
+/* ===== state ===== */
+let roster = { students: [], lectures: [] };
+let attCache = {};           // { studentId: { lectureId: 'present'|'absent' } }
+let rLoaded = false, aLoaded = false;
+let currentTab = 'student';
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),2200);}
+function fmtDate(d){if(!d)return'';const p=d.split('-');const wd=['日','月','火','水','木','金','土'][new Date(d+'T00:00:00').getDay()];return `${Number(p[1])}月${Number(p[2])}日(${wd})`;}
+function esc(s){return(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function sortedLectures(){return[...roster.lectures].sort((a,b)=>a.date.localeCompare(b.date));}
+function loadAtt(sid){ return attCache[sid] || {}; }
+
+/* ===== Firestore 保存 ===== */
+async function saveRoster(){ try{ await DROSTER.set(roster); }catch(e){ toast('保存に失敗しました（通信をご確認ください）'); throw e; } }
+async function saveAtt(sid, marks){ try{ await CATT.doc(sid).set({ marks }); }catch(e){ throw e; } }
+
+/* ===== リアルタイム購読 ===== */
+DROSTER.onSnapshot(s=>{ const d=s.exists?s.data():null; roster={students:(d&&d.students)||[],lectures:(d&&d.lectures)||[]}; rLoaded=true; onData(); },
+  ()=>{ document.getElementById('view').innerHTML='<div class="card"><p class="hint danger">データベースに接続できませんでした。少し待って再読み込みしてください。</p></div>'; });
+CATT.onSnapshot(s=>{ attCache={}; s.forEach(doc=>{ attCache[doc.id]=(doc.data()&&doc.data().marks)||{}; }); aLoaded=true; onData(); }, ()=>{});
+
+function onData(){ if(!rLoaded||!aLoaded) return; if(currentTab==='admin') renderAdmin(); else if(!stu.sid) renderStudent(); }
+function switchTab(t){currentTab=t;document.getElementById('tabStudent').setAttribute('aria-selected',t==='student');document.getElementById('tabAdmin').setAttribute('aria-selected',t==='admin');render();}
+function render(){ currentTab==='admin' ? renderAdmin() : renderStudent(); }
+
+/* ================= 受講生ビュー ================= */
+let stu={sid:null, saved:{}, draft:{}, editing:new Set()};
+function renderStudent(){
+  const view=document.getElementById('view');
+  if(!roster.students.length||!roster.lectures.length){
+    view.innerHTML=`<div class="card"><h2><span class="n">!</span>準備中です</h2><p class="hint">管理者が受講生と講義日を登録すると、ここから出欠を送信できます。</p></div>`; return;
+  }
+  const opts=roster.students.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  view.innerHTML=`
+    <div class="card">
+      <h2><span class="n">1</span>お名前を選択</h2>
+      <p class="hint">ご自身の名前を選ぶと、講義日ごとの出欠を送信できます。</p>
+      <select id="stuSel" onchange="onStudentPick()"><option value="">— 選択してください —</option>${opts}</select>
+    </div>
+    <div id="stuForm"></div>`;
+  if(stu.sid && roster.students.some(s=>s.id===stu.sid)){ document.getElementById('stuSel').value=stu.sid; renderStuForm(); }
+}
+function onStudentPick(){
+  const sid=document.getElementById('stuSel').value;
+  const box=document.getElementById('stuForm');
+  if(!sid){ stu={sid:null,saved:{},draft:{},editing:new Set()}; box.innerHTML=''; return; }
+  const saved=loadAtt(sid);
+  const editing=new Set();
+  sortedLectures().forEach(l=>{ if(saved[l.id]===undefined) editing.add(l.id); });
+  stu={sid, saved:{...saved}, draft:{...saved}, editing};
+  renderStuForm();
+}
+function renderStuForm(){
+  const box=document.getElementById('stuForm');
+  const rows=sortedLectures().map(l=>{
+    const savedVal=stu.saved[l.id];
+    const isEditing=stu.editing.has(l.id);
+    const done = savedVal!==undefined && !isEditing;
+    let right;
+    if(isEditing){
+      const d=stu.draft[l.id];
+      right=`<div class="pick">
+        <button class="${d==='present'?'on-o':''}" onclick="pick('${l.id}','present')">○ 出席</button>
+        <button class="${d==='absent'?'on-x':''}" onclick="pick('${l.id}','absent')">× 欠席</button>
+      </div>`;
+    }else{
+      right=`<div class="pick">
+        <button class="${savedVal==='present'?'on-o':'off'}" disabled>○ 出席</button>
+        <button class="${savedVal==='absent'?'on-x':'off'}" disabled>× 欠席</button>
+        <button class="chg" onclick="changeRow('${l.id}')">変更</button>
+      </div>`;
+    }
+    return `<div class="lecrow ${done?'done':''}">
+      <div class="grow"><div class="date">${fmtDate(l.date)}</div>${l.label?`<div class="lbl">${esc(l.label)}</div>`:''}</div>
+      ${right}
+    </div>`;
+  }).join('');
+  const anyEditing=[...stu.editing].length>0;
+  box.innerHTML=`<div class="card">
+    <h2><span class="n">2</span>出欠を選んで送信</h2>
+    <p class="hint">「出席／欠席」を選んで送信してください。送信済みは色付きで表示され、「変更」から修正できます。</p>
+    ${rows}
+    ${anyEditing?`<div class="subrow"><button class="btn" onclick="submitAtt()">この内容で送信する</button></div>`:''}
+  </div>`;
+}
+function pick(lid,val){ stu.draft[lid]=val; renderStuForm(); }
+function changeRow(lid){ stu.editing.add(lid); if(stu.draft[lid]===undefined && stu.saved[lid]!==undefined) stu.draft[lid]=stu.saved[lid]; renderStuForm(); }
+async function submitAtt(){
+  const next={...stu.saved}; let n=0;
+  stu.editing.forEach(lid=>{ if(stu.draft[lid]!==undefined){ next[lid]=stu.draft[lid]; n++; } });
+  if(n===0){ toast('出席／欠席を選んでください'); return; }
+  try{ await saveAtt(stu.sid, next); stu.saved=next; stu.draft={...next}; stu.editing=new Set(); renderStuForm();
+    const name=(roster.students.find(s=>s.id===stu.sid)||{}).name||''; toast(`${name} さんの出欠を送信しました`);
+  }catch(e){ toast('送信に失敗しました。もう一度お試しください'); }
+}
+
+/* ================= 管理者ビュー（集計を一番上に） ================= */
+function renderAdmin(){
+  const view=document.getElementById('view');
+  const stuChips=roster.students.length
+    ? `<div class="chips">${roster.students.map(s=>`<span class="chip">${esc(s.name)}<button title="削除" onclick="delStudent('${s.id}')">×</button></span>`).join('')}</div>`
+    : `<div class="empty">まだ受講生が登録されていません。</div>`;
+  const lecChips=roster.lectures.length
+    ? `<div class="chips">${sortedLectures().map(l=>`<span class="chip">${fmtDate(l.date)}${l.label?' ・ '+esc(l.label):''}<button title="削除" onclick="delLecture('${l.id}')">×</button></span>`).join('')}</div>`
+    : `<div class="empty">まだ講義日が登録されていません。</div>`;
+  view.innerHTML=`
+    <div class="card">
+      <h2><span class="n">1</span>出欠状況一覧</h2>
+      <p class="hint">○＝出席／×＝欠席／−＝未送信。受講生の送信がリアルタイムで反映されます。</p>
+      <div id="grid" class="loading">集計中…</div>
+    </div>
+    <div class="card">
+      <h2><span class="n">2</span>受講生一覧</h2>
+      <p class="hint">名前を1行に1名で入力（複数まとめて貼り付けOK）。</p>
+      <textarea id="stuInput" placeholder="山田 花子&#10;佐藤 太郎&#10;鈴木 美咲"></textarea>
+      <div style="margin-top:10px"><button class="btn sm" onclick="addStudents()">追加する</button></div>
+      ${stuChips}
+    </div>
+    <div class="card">
+      <h2><span class="n">3</span>講義日</h2>
+      <p class="hint">日付と、任意で回のテーマ（例：第1回 腸活の基本）を登録します。</p>
+      <div class="row"><input type="date" id="lecDate" style="flex:0 0 170px"><input type="text" id="lecLabel" placeholder="回・テーマ（任意）" class="grow"><button class="btn sm" onclick="addLecture()">追加</button></div>
+      ${lecChips}
+    </div>
+    <div class="card">
+      <h2><span class="n">⚙</span>データ管理</h2>
+      <p class="hint">データはクラウドに保存され、このURLを開いた全員が同じ内容をリアルタイムで見られます。</p>
+      <p class="hint danger">下は全データを消去します（取り消せません）。</p>
+      <button class="btn ghost sm danger" onclick="resetAll()">全データを消去</button>
+    </div>`;
+  buildGrid();
+}
+async function addStudents(){
+  const ta=document.getElementById('stuInput');
+  const names=ta.value.split('\n').map(s=>s.trim()).filter(Boolean);
+  if(!names.length){ toast('名前を入力してください'); return; }
+  names.forEach(n=>roster.students.push({id:uid(),name:n}));
+  try{ await saveRoster(); ta.value=''; toast(`${names.length}名を追加しました`); }catch(e){}
+}
+async function delStudent(id){ roster.students=roster.students.filter(s=>s.id!==id); try{ await saveRoster(); await CATT.doc(id).delete(); }catch(e){} }
+async function addLecture(){
+  const d=document.getElementById('lecDate').value; const lbl=document.getElementById('lecLabel').value.trim();
+  if(!d){ toast('日付を選んでください'); return; }
+  roster.lectures.push({id:uid(),date:d,label:lbl}); try{ await saveRoster(); toast('講義日を追加しました'); }catch(e){}
+}
+async function delLecture(id){ roster.lectures=roster.lectures.filter(l=>l.id!==id); try{ await saveRoster(); }catch(e){} }
+
+function buildGrid(){
+  const el=document.getElementById('grid'); if(!el) return;
+  if(!roster.students.length){ el.innerHTML=`<div class="empty">受講生を登録すると、ここに一覧が表示されます。</div>`; return; }
+  const lecs=sortedLectures();
+  if(!lecs.length){
+    const rows=roster.students.map(s=>`<tr><th>${esc(s.name)}</th></tr>`).join('');
+    el.innerHTML=`<div class="tablewrap"><table><thead><tr><th>受講生</th></tr></thead><tbody>${rows}</tbody></table></div><div class="empty" style="margin-top:8px">講義日を登録すると出欠列が追加されます。</div>`; return;
+  }
+  const head='<tr><th>受講生 ＼ 講義日</th>'+lecs.map(l=>`<th>${fmtDate(l.date)}${l.label?'<br><span style="font-weight:400;font-size:11px">'+esc(l.label)+'</span>':''}</th>`).join('')+'</tr>';
+  const body=roster.students.map(s=>{
+    const a=loadAtt(s.id);
+    const cells=lecs.map(l=>{ const v=a[l.id];
+      if(v==='present')return'<td><span class="o">○</span></td>';
+      if(v==='absent')return'<td><span class="x">×</span></td>';
+      return'<td><span class="dash">−</span></td>'; }).join('');
+    return `<tr><th>${esc(s.name)}</th>${cells}</tr>`;
+  }).join('');
+  let present=0,absent=0; const total=roster.students.length*lecs.length;
+  for(const s of roster.students){ const a=loadAtt(s.id); for(const l of lecs){ if(a[l.id]==='present')present++; else if(a[l.id]==='absent')absent++; } }
+  el.innerHTML=`<div class="tablewrap"><table><thead>${head}</thead><tbody>${body}</tbody></table></div>
+    <div class="stat"><div>出席 <span>${present}</span></div><div>欠席 <span>${absent}</span></div><div>未送信 <span>${total-present-absent}</span></div></div>`;
+}
+async function resetAll(){
+  if(!confirm('全データを消去します。よろしいですか？'))return;
+  try{
+    const snap=await CATT.get(); const batch=db.batch(); snap.forEach(d=>batch.delete(d.ref)); await batch.commit();
+    await DROSTER.delete(); toast('すべて消去しました');
+  }catch(e){ toast('消去に失敗しました'); }
+}
+</script>
+</body>
+</html>
