@@ -199,7 +199,7 @@ async function submitAtt(){
 function renderAdmin(){
   const view=document.getElementById('view');
   const stuChips=roster.students.length
-    ? `<div class="chips">${roster.students.map(s=>`<span class="chip" title="${esc(s.yomi||'')}">${esc(s.name)}<button title="削除" onclick="delStudent('${s.id}')">×</button></span>`).join('')}</div>`
+    ? `<div class="chips">${roster.students.map(s=>`<span class="chip">${esc(s.name)}<button title="削除" onclick="delStudent('${s.id}')">×</button></span>`).join('')}</div>`
     : `<div class="empty">まだ受講生が登録されていません。</div>`;
   const lecChips=roster.lectures.length
     ? `<div class="chips">${sortedLectures().map(l=>`<span class="chip">${fmtDate(l.date)}${l.label?' ・ '+esc(l.label):''}<button title="削除" onclick="delLecture('${l.id}')">×</button></span>`).join('')}</div>`
@@ -218,9 +218,8 @@ function renderAdmin(){
         <button class="btn sm" onclick="addStudents()">追加する</button>
         <button class="btn sm ghost" onclick="document.getElementById('csvFile').click()">CSVから取り込み</button>
         <input type="file" id="csvFile" accept=".csv,text/csv" onchange="onCsvFile(this)" style="display:none">
-        <button class="btn sm ghost" onclick="resortStudents()">あいうえお順に並べ替え</button>
       </div>
-      <p class="hint" style="margin-top:8px">CSVの「名前」列から自動で取り込み、ふりがなを推定してあいうえお順に並べます（重複は自動でスキップ）。</p>
+      <p class="hint" style="margin-top:8px">CSVの「名前」列から自動で取り込みます（重複は自動でスキップ）。</p>
       ${stuChips}
     </div>
     <div class="card">
@@ -237,7 +236,7 @@ function renderAdmin(){
     </div>`;
   buildGrid();
 }
-/* ===== 受講生の追加・CSV取り込み・あいうえお順ソート ===== */
+/* ===== 受講生の追加・CSV取り込み ===== */
 function normName(n){ return (n||'').replace(/\s+/g,' ').trim(); }
 function nameKey(n){ return (n||'').replace(/\s+/g,''); }
 
@@ -263,32 +262,6 @@ function namesFromCsv(text){
   return out;
 }
 
-/* ふりがな推定（kuromoji.js を必要時のみCDNから読込） */
-let _kuroTok=null,_kuroP=null;
-function loadKuromoji(){
-  if(_kuroTok) return Promise.resolve(_kuroTok);
-  if(_kuroP) return _kuroP;
-  _kuroP=new Promise((res,rej)=>{
-    function build(){ window.kuromoji.builder({dicPath:'https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/'}).build((e,t)=>{ if(e) rej(e); else { _kuroTok=t; res(t); } }); }
-    if(window.kuromoji){ build(); return; }
-    const sc=document.createElement('script');
-    sc.src='https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js';
-    sc.onload=build; sc.onerror=()=>rej(new Error('load fail'));
-    document.head.appendChild(sc);
-  });
-  return _kuroP;
-}
-function kataToHira(s){ return String(s||'').replace(/[\u30a1-\u30f6]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60)); }
-async function yomiOf(name){
-  try{ const tok=await loadKuromoji();
-    const ts=tok.tokenize(nameKey(name));
-    const r=ts.map(t=>(t.reading&&t.reading!=='*')?t.reading:t.surface_form).join('');
-    return kataToHira(r);
-  }catch(e){ return null; }
-}
-async function ensureYomi(list){ for(const s of list){ if(!s.yomi){ const y=await yomiOf(s.name); if(y) s.yomi=y; } } }
-function sortStudents(){ roster.students.sort((a,b)=>(a.yomi||a.name||'').localeCompare(b.yomi||b.name||'','ja')); }
-
 async function addStudentNames(names){
   names=(names||[]).map(normName).filter(Boolean);
   if(!names.length){ toast('名前が見つかりませんでした'); return 0; }
@@ -296,13 +269,9 @@ async function addStudentNames(names){
   const fresh=[]; const seen=new Set();
   for(const n of names){ const k=nameKey(n); if(have.has(k)||seen.has(k)) continue; seen.add(k); fresh.push(n); }
   if(!fresh.length){ toast('すでに登録済みの名前でした'); return 0; }
-  const add=fresh.map(n=>({id:uid(),name:n,yomi:''}));
-  await ensureYomi(add); const ok=!add.some(s=>!s.yomi);
-  roster.students.push(...add);
-  await ensureYomi(roster.students);
-  sortStudents();
+  fresh.forEach(n=>roster.students.push({id:uid(),name:n}));
   try{ await saveRoster(); }catch(e){ return 0; }
-  toast(ok?`${fresh.length}名を追加しました`:`${fresh.length}名を追加しました（ふりがな取得に一部失敗し名前順で代用）`);
+  toast(`${fresh.length}名を追加しました`);
   return fresh.length;
 }
 async function addStudents(){
@@ -315,16 +284,10 @@ function onCsvFile(input){
   const rd=new FileReader();
   rd.onload=async()=>{ const names=namesFromCsv(String(rd.result||'')); input.value='';
     if(!names.length){ toast('「名前」列が見つかりませんでした'); return; }
-    toast('取り込み中…（初回はふりがな辞書の読込で数秒かかります）');
     await addStudentNames(names);
   };
   rd.onerror=()=>toast('ファイルを読めませんでした');
   rd.readAsText(f);
-}
-async function resortStudents(){
-  if(!roster.students.length){ toast('受講生がいません'); return; }
-  toast('並べ替え中…'); await ensureYomi(roster.students); sortStudents();
-  try{ await saveRoster(); toast('あいうえお順に並べ替えました'); }catch(e){}
 }
 async function delStudent(id){ roster.students=roster.students.filter(s=>s.id!==id); try{ await saveRoster(); await CATT.doc(id).delete(); }catch(e){} }
 async function addLecture(){
