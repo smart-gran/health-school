@@ -216,7 +216,8 @@ function renderAdmin(){
       <textarea id="stuInput" placeholder="山田 花子&#10;佐藤 太郎&#10;鈴木 美咲"></textarea>
       <div class="row" style="margin-top:10px;flex-wrap:wrap;gap:8px">
         <button class="btn sm" onclick="addStudents()">追加する</button>
-        <label class="btn sm ghost" style="cursor:pointer;display:inline-flex;align-items:center">CSVから取り込み<input type="file" accept=".csv,text/csv" onchange="onCsvFile(this)" style="display:none"></label>
+        <button class="btn sm ghost" onclick="document.getElementById('csvFile').click()">CSVから取り込み</button>
+        <input type="file" id="csvFile" accept=".csv,text/csv" onchange="onCsvFile(this)" style="display:none">
         <button class="btn sm ghost" onclick="resortStudents()">あいうえお順に並べ替え</button>
       </div>
       <p class="hint" style="margin-top:8px">CSVの「名前」列から自動で取り込み、ふりがなを推定してあいうえお順に並べます（重複は自動でスキップ）。</p>
