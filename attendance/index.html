@@ -103,6 +103,8 @@ let roster = { students: [], lectures: [] };
 let attCache = {};           // { studentId: { lectureId: 'present'|'absent' } }
 let rLoaded = false, aLoaded = false;
 let currentTab = 'student';
+let adminUnlocked = false;
+const ADMIN_PW = '1111';
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),2200);}
@@ -120,9 +122,27 @@ DROSTER.onSnapshot(s=>{ const d=s.exists?s.data():null; roster={students:(d&&d.s
   ()=>{ document.getElementById('view').innerHTML='<div class="card"><p class="hint danger">データベースに接続できませんでした。少し待って再読み込みしてください。</p></div>'; });
 CATT.onSnapshot(s=>{ attCache={}; s.forEach(doc=>{ attCache[doc.id]=(doc.data()&&doc.data().marks)||{}; }); aLoaded=true; onData(); }, ()=>{});
 
-function onData(){ if(!rLoaded||!aLoaded) return; if(currentTab==='admin') renderAdmin(); else if(!stu.sid) renderStudent(); }
+function onData(){ if(!rLoaded||!aLoaded) return; if(currentTab==='admin'){ adminUnlocked?renderAdmin():renderAdminLock(); } else if(!stu.sid) renderStudent(); }
 function switchTab(t){currentTab=t;document.getElementById('tabStudent').setAttribute('aria-selected',t==='student');document.getElementById('tabAdmin').setAttribute('aria-selected',t==='admin');render();}
-function render(){ currentTab==='admin' ? renderAdmin() : renderStudent(); }
+function render(){ if(currentTab==='admin'){ adminUnlocked?renderAdmin():renderAdminLock(); } else renderStudent(); }
+function renderAdminLock(){
+  const view=document.getElementById('view');
+  view.innerHTML=`
+    <div class="card">
+      <h2><span class="n">🔒</span>管理者ログイン</h2>
+      <p class="hint">管理者用パスワードを入力してください。</p>
+      <div class="row" style="margin-top:6px">
+        <input type="password" id="admPw" class="grow" placeholder="パスワード" onkeydown="if(event.key==='Enter')tryUnlock()">
+        <button class="btn sm" onclick="tryUnlock()">ログイン</button>
+      </div>
+    </div>`;
+  setTimeout(()=>{const e=document.getElementById('admPw'); if(e) e.focus();},0);
+}
+function tryUnlock(){
+  const v=(document.getElementById('admPw')||{}).value||'';
+  if(v===ADMIN_PW){ adminUnlocked=true; toast('ログインしました'); renderAdmin(); }
+  else { toast('パスワードが違います'); const e=document.getElementById('admPw'); if(e){ e.value=''; e.focus(); } }
+}
 
 /* ================= 受講生ビュー ================= */
 let stu={sid:null, saved:{}, draft:{}, editing:new Set()};
