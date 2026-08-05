@@ -106,6 +106,23 @@
   <h1>個別相談参加者管理</h1>
   <p class="sub">健康ビジネス個別相談｜全員で同じデータを共有しています</p>
 
+  <!-- 担当者選択（トップ） -->
+  <div id="instructorGate" class="card" style="text-align:center;padding:28px">
+    <h2 style="margin-top:0">担当者を選んでください</h2>
+    <p class="hint">選んだ担当者の参加者・カレンダー・アンケートが表示されます。あとから切り替えられます。</p>
+    <div class="row" style="justify-content:center;gap:12px;margin-top:8px">
+      <button id="pickSaito" style="min-width:160px">齋藤担当</button>
+      <button id="pickInagaki" style="min-width:160px">稲垣担当</button>
+    </div>
+  </div>
+
+  <!-- 現在の担当者バー -->
+  <div id="instructorBar" class="toolbar" style="display:none">
+    <span class="small">担当者：<strong id="currentInstructorLabel"></strong></span>
+    <button class="secondary" id="switchInstructorBtn">担当者を切り替え</button>
+  </div>
+
+  <div id="appMain" style="display:none">
   <div class="tabs">
     <button class="tab-btn active" data-tab="calendar">カレンダー</button>
     <button class="tab-btn" data-tab="list">参加者管理</button>
@@ -197,6 +214,7 @@
       <p class="hint">このアプリのデータはクラウド上のデータベースに自動保存され、このURLを開いた人全員がリアルタイムで同じ内容を見られます。</p>
     </div>
   </div>
+  </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
@@ -214,7 +232,13 @@
   };
   firebase.initializeApp(firebaseConfig);
   var db = firebase.firestore();
-  var docRef = db.collection('app').doc('participants');
+  var INSTRUCTORS = {
+    saito:    { label: '齋藤担当', doc: 'participants' },
+    inagaki:  { label: '稲垣担当', doc: 'participants_inagaki' }
+  };
+  var currentInstructor = null;
+  var unsubscribe = null;
+  var docRef = null;
 
   var participants = []; // {id, name, kana, email, visits:[{id, datetime, survey:{}, deal, amount, memo, challenge}]}
   var challenges = []; // ["2026年2月チャレンジ", ...]
@@ -231,7 +255,9 @@
 
   function loadData(){
     // 初回読込＋リアルタイム同期。他の人が更新した内容も自動で反映される
-    docRef.onSnapshot(function(doc){
+    if (!docRef) return;
+    if (unsubscribe) { try { unsubscribe(); } catch(e){} unsubscribe = null; }
+    unsubscribe = docRef.onSnapshot(function(doc){
       // 自分がちょうど保存した直後の通知では再描画によるチラつきを避けるため、
       // 保存キュー中でなければ常に最新を反映する
       if (saveQueued) return;
@@ -1140,7 +1166,29 @@
     if (document.getElementById('panel-calendar').classList.contains('active')) renderCalendar();
   }
 
-  loadData();
+  // ---------- 担当者選択（トップで齋藤／稲垣を選ぶ） ----------
+  function selectInstructor(key){
+    if (!INSTRUCTORS[key]) return;
+    currentInstructor = key;
+    docRef = db.collection('app').doc(INSTRUCTORS[key].doc);
+    participants = []; challenges = []; isLoaded = false;
+    document.getElementById('currentInstructorLabel').textContent = INSTRUCTORS[key].label;
+    document.getElementById('instructorGate').style.display = 'none';
+    document.getElementById('instructorBar').style.display = '';
+    document.getElementById('appMain').style.display = '';
+    loadData();
+  }
+  function backToGate(){
+    if (unsubscribe) { try { unsubscribe(); } catch(e){} unsubscribe = null; }
+    currentInstructor = null; docRef = null;
+    participants = []; challenges = []; isLoaded = false;
+    document.getElementById('appMain').style.display = 'none';
+    document.getElementById('instructorBar').style.display = 'none';
+    document.getElementById('instructorGate').style.display = '';
+  }
+  document.getElementById('pickSaito').addEventListener('click', function(){ selectInstructor('saito'); });
+  document.getElementById('pickInagaki').addEventListener('click', function(){ selectInstructor('inagaki'); });
+  document.getElementById('switchInstructorBtn').addEventListener('click', backToGate);
 })();
 </script>
 </body>
