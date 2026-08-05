@@ -299,6 +299,7 @@
 
   // 旧データ互換：来訪のsurveyに残っているアンケートデータをperson.surveyに移行する
   function migrateSurveyToPersonLevel(){
+    return; // 回ごとにアンケートを保持するため、person単位への集約は行わない
     var needsSave = false;
     participants.forEach(function(p){
       if (p.survey && Object.keys(p.survey).length > 0) return; // すでにperson.surveyがあればスキップ
@@ -539,21 +540,27 @@
 
       var person = findPerson(name, email);
 
-      // 重複チェック：同じ人に同じ回答日時のアンケートが既に入っていればスキップ
-      if (person && answerDate && person.survey) {
-        var ansKey = answerDateCol ? normalizeKey(answerDateCol) : null;
-        if (ansKey && person.survey[ansKey] === answerDate) {
-          duplicated++;
-          return;
-        }
-      }
-
       if (person) {
-        // アンケートを人単位で保存（上書きマージ）
-        if (!person.survey) person.survey = {};
-        Object.keys(survey).forEach(function(k){
-          person.survey[k] = survey[k];
-        });
+        // アンケートを「回（来訪）ごと」に保存：回答日時に最も近い来訪へ紐づける
+        var target = findBestVisit(person, answerDate, challengeName);
+        var ansKey = answerDateCol ? normalizeKey(answerDateCol) : null;
+        if (target) {
+          // 重複チェック：同じ回に同じ回答日時のアンケートが既にあればスキップ
+          if (ansKey && target.survey && target.survey[ansKey] === answerDate) {
+            duplicated++;
+            return;
+          }
+          if (!target.survey) target.survey = {};
+          Object.keys(survey).forEach(function(k){ target.survey[k] = survey[k]; });
+        } else {
+          // 来訪が一つも無い場合のみ人単位に退避
+          if (ansKey && person.survey && person.survey[ansKey] === answerDate) {
+            duplicated++;
+            return;
+          }
+          if (!person.survey) person.survey = {};
+          Object.keys(survey).forEach(function(k){ person.survey[k] = survey[k]; });
+        }
         if (email && !person.email) person.email = email;
         linked++;
       } else {
@@ -844,36 +851,40 @@
     return html;
   }
 
+  function surveyDl(surveyObj, label){
+    var keys = surveyObj ? Object.keys(surveyObj).filter(function(k){
+      return !reserveCsvKeys.some(function(rk){ return k === rk; });
+    }) : [];
+    var html = '<dl style="margin:2px 0 8px">';
+    html += '<dt style="font-weight:600;color:#993556">' + escapeHtml(label || '事前アンケート') + '</dt>';
+    if (keys.length) {
+      keys.forEach(function(k){
+        html += '<dt>' + escapeHtml(k) + '</dt><dd>' + escapeHtml(surveyObj[k]) + '</dd>';
+      });
+    } else {
+      html += '<dd>登録なし</dd>';
+    }
+    html += '</dl>';
+    return html;
+  }
+
   function renderPersonDetail(id){
     var p = participants.find(function(x){ return x.id === id; });
     if (!p) return '';
     var html = '';
 
-    // アンケートは人単位で表示（旧データ互換：person.surveyがなければ最初の来訪のsurveyから表示）
+    // 旧データ（person単位に集約されたアンケート）のみ上部に表示する
     var personSurvey = p.survey || null;
-    if (!personSurvey) {
-      // 旧データ：来訪のsurveyからアンケート特有のものを探す
-      p.visits.forEach(function(v){
-        if (!personSurvey && v.survey) {
-          var hasNonReserve = Object.keys(v.survey).some(function(k){
-            return !reserveCsvKeys.some(function(rk){ return k === rk; });
-          });
-          if (hasNonReserve) personSurvey = v.survey;
-        }
-      });
-    }
 
-    // アンケートセクションを一番上に表示
-    html += '<div class="visit-block" style="background:#fff8f0;border-color:#f5c8a0">';
-    html += '<h4 style="margin-bottom:6px">事前アンケート</h4><dl>';
+    // 旧データ（person単位に集約されたアンケート）がある場合のみ上部にまとめて表示
     if (personSurvey && Object.keys(personSurvey).length) {
+      html += '<div class="visit-block" style="background:#fff8f0;border-color:#f5c8a0">';
+      html += '<h4 style="margin-bottom:6px">事前アンケート（全体）</h4><dl>';
       Object.keys(personSurvey).forEach(function(k){
         html += '<dt>' + escapeHtml(k) + '</dt><dd>' + escapeHtml(personSurvey[k]) + '</dd>';
       });
-    } else {
-      html += '<dt>事前アンケート</dt><dd>登録なし</dd>';
+      html += '</dl></div>';
     }
-    html += '</dl></div>';
 
     var sortedVisits = p.visits.slice().sort(function(a,b){
       var da = parseDate(a.datetime);
@@ -887,6 +898,7 @@
       html += '<div class="visit-block">';
       html += '<h4>第' + (idx+1) + '回｜' + escapeHtml(v.datetime || '日時未登録') +
         '<button class="secondary del-visit-btn" data-vid="' + v.id + '" style="float:right;padding:2px 10px;font-size:11px">この回を削除</button></h4>';
+      html += surveyDl(v.survey, 'この回の事前アンケート');
       html += renderResultEditor(v);
       html += '</div>';
     });
@@ -1061,10 +1073,9 @@
         var isOpen = detail.classList.contains('open');
         wrap.querySelectorAll('.detail').forEach(function(d){ d.classList.remove('open'); });
         if (!isOpen) {
-          var p = participants.find(function(x){ return x.id === pid; });
-          var v = p.visits.find(function(x){ return x.id === vid; });
-          detail.innerHTML = renderSingleVisitDetail(v, p);
+          detail.innerHTML = renderPersonDetail(pid);
           detail.classList.add('open');
+          bindDetailDeleteButtons(detail, pid);
           bindResultEditors(detail, pid);
         }
       });
