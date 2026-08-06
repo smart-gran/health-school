@@ -555,42 +555,56 @@ async function saveCamps(sid){ const s=studentById(sid); if(!s) return;
 
 /* ---- CSV: term roster ---- */
 function openCsv(termId){
-  openModal(`<div class="modal"><h3>CSVで一括登録</h3><p class="mdesc">見出し行から「名前・メール・住所・メモ」を自動判別します。個別相談アプリの成約者一覧（名前＋メモ等）もそのまま取り込めます。同じ期に同名がいれば重複はスキップします。</p>
+  openModal(`<div class="modal"><h3>CSVで一括登録</h3><p class="mdesc">見出し行から名前・メール・住所・メモを自動判別します。個別相談の成約者一覧や、UTAGEの登録者一覧（お名前／姓名／LINE登録名・都道府県〜番地）もそのまま取り込めます。文字コードはUTF-8・Shift-JIS（Excel）両対応。同じ期に同名がいれば重複はスキップします。</p>
     <div class="field"><input type="file" id="m_csv" accept=".csv,text/csv"></div>
-    <div class="hint">名前だけの行もOK。見出しがない場合は、1列目=名前・2列目=メール・3列目=住所として読み込みます。個別相談CSVの「メモ」は備考欄に入ります。</div>
+    <div class="hint">名前は「お名前→姓+名→LINE登録名」の順で拾います。見出しが無い場合は、1列目=名前・2列目=メール・3列目=住所として読み込みます。</div>
     <div class="row" style="margin-top:16px"><button class="btn ghost small" onclick="downloadTemplate()">テンプレートCSVを保存</button><div class="spacer"></div>
       <button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn primary" onclick="importCsv('${termId}')">取り込む</button></div></div>`);
 }
 function pickCol(headers, keys){ return headers.findIndex(h=> keys.some(k=> h.replace(/\s/g,'').toLowerCase().includes(k))); }
-function importCsv(termId){
+function exactCol(headers, names){ return headers.findIndex(h=> names.includes(h.replace(/\s/g,''))); }
+async function importCsv(termId){
   const file=document.getElementById('m_csv').files[0]; if(!file){toast('ファイルを選択してください');return;}
-  Papa.parse(file,{skipEmptyLines:true,complete:async(res)=>{
-    let rows=res.data; if(!rows.length){toast('データがありません');return;}
-    const first=rows[0].map(c=>(c||'').toString());
-    const looksHeader=first.some(c=>/名前|氏名|name|メール|mail|住所|address|メモ|備考|memo/i.test(c));
-    let ni=0,ei=1,ai=2,mi=-1;
-    if(looksHeader){
-      ni=pickCol(first,['名前','氏名','name']); if(ni<0)ni=0;
-      ei=pickCol(first,['メール','mail','email']);
-      ai=pickCol(first,['住所','address']);
-      mi=pickCol(first,['メモ','備考','memo']);
-      rows=rows.slice(1);
-    }
-    const existing=new Set(studentsOf(termId).map(s=>(s.name||'').trim()));
-    let added=0, skipped=0, dup=0;
-    rows.forEach(r=>{ const name=(r[ni]||'').toString().trim(); if(!name){skipped++;return;}
-      if(existing.has(name)){ dup++; return; }             // 同じ期に同名が既にいれば重複スキップ
-      const email=ei>=0?(r[ei]||'').toString().trim():'';
-      const address=ai>=0?(r[ai]||'').toString().trim():'';
-      const memo=mi>=0?(r[mi]||'').toString().trim():'';
-      DATA.students.push({id:uid(),termId,name,email,address,memo,isAfter:false,log:[],camps:[]});
-      existing.add(name); added++;
-    });
-    await persist(); closeModal(); render();
-    let msg=`${added}名を登録`; const extra=[]; if(dup)extra.push(`重複${dup}件`); if(skipped)extra.push(`空欄${skipped}行`);
-    if(extra.length)msg+=`（${extra.join('・')}スキップ）`;
-    toast(msg);
-  },error:()=>toast('読み込みに失敗しました')});
+  let text;
+  try{
+    const buf=await file.arrayBuffer();
+    text=new TextDecoder('utf-8').decode(buf);
+    if(text.includes('\uFFFD')) text=new TextDecoder('shift_jis').decode(buf); // Excel/UTAGE等のShift-JIS対応
+  }catch(e){ toast('読み込みに失敗しました'); return; }
+  const res=Papa.parse(text,{skipEmptyLines:true});
+  let rows=res.data; if(!rows.length){toast('データがありません');return;}
+  const first=rows[0].map(c=>(c||'').toString());
+  const looksHeader=first.some(c=>/名前|氏名|name|メール|mail|住所|address|メモ|備考|memo|お名前|登録名|都道府県|フリガナ/i.test(c));
+  let ni=0,ei=-1,ai=-1,mi=-1,si=-1,mei=-1,lni=-1,pref=-1,city=-1,banchi=-1,bldg=-1;
+  if(looksHeader){
+    ni=pickCol(first,['お名前','氏名','名前','name']); if(ni<0)ni=0;
+    ei=pickCol(first,['メールアドレス','メール','mail','email']);
+    ai=pickCol(first,['住所','address']);
+    mi=pickCol(first,['メモ','備考','memo']);
+    si=exactCol(first,['姓']); mei=exactCol(first,['名']);       // お名前が空のとき用
+    lni=pickCol(first,['line登録名','登録名']);                   // それも空のとき用
+    pref=exactCol(first,['都道府県']); city=exactCol(first,['市区町村']); banchi=exactCol(first,['番地']); bldg=pickCol(first,['マンション','建物','部屋']);
+    rows=rows.slice(1);
+  }
+  const get=(r,i)=> i>=0 ? (r[i]||'').toString().trim() : '';
+  const existing=new Set(studentsOf(termId).map(s=>(s.name||'').trim()));
+  let added=0, skipped=0, dup=0;
+  rows.forEach(r=>{
+    let name=get(r,ni);
+    if(!name){ const sn=(get(r,si)+' '+get(r,mei)).trim(); name = sn || get(r,lni); }  // お名前→姓+名→LINE登録名
+    if(!name){ skipped++; return; }
+    if(existing.has(name)){ dup++; return; }
+    const email=get(r,ei);
+    let address=get(r,ai);
+    if(!address && pref>=0){ address=[get(r,pref),get(r,city),get(r,banchi),get(r,bldg)].filter(Boolean).join(''); }
+    const memo=get(r,mi);
+    DATA.students.push({id:uid(),termId,name,email,address,memo,isAfter:false,log:[],camps:[]});
+    existing.add(name); added++;
+  });
+  await persist(); closeModal(); render();
+  let msg=`${added}名を登録`; const extra=[]; if(dup)extra.push(`重複${dup}件`); if(skipped)extra.push(`空欄${skipped}行`);
+  if(extra.length)msg+=`（${extra.join('・')}スキップ）`;
+  toast(msg);
 }
 function downloadTemplate(){ dl('受講生テンプレート.csv','名前,メールアドレス,住所,メモ\n山田 花子,hanako@example.com,広島県福山市...,\n田中 太郎,,,体験から継続\n','text/csv'); }
 
