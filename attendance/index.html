@@ -73,7 +73,7 @@
 <div class="wrap">
   <header class="app">
     <div class="mark">🌿</div>
-    <div><h1>講義 出欠管理</h1><p>受講生・講義日を登録し、出欠を集計します</p></div>
+    <div><h1>講義 出欠管理</h1><p>講義日を登録し、出欠を集計します（受講生は受講生カルテと共通）</p></div>
   </header>
   <div class="tabs">
     <button class="tab" id="tabStudent" aria-selected="true" onclick="switchTab('student')">受講生 出欠フォーム</button>
@@ -95,63 +95,55 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
-const DROSTER = db.collection('lecture_app').doc('roster'); // { students:[], lectures:[] }
-const CATT = db.collection('lecture_att');                  // doc(studentId) = { marks:{ lectureId:'present'|'absent' } }
+const KDOC = db.collection('karte_app').doc('data');        // 名簿の唯一のソース＝受講生カルテ（読み取り専用）
+const LROSTER = db.collection('lecture_app').doc('roster'); // { lectures:[...] } 講義日は出欠アプリが所有
+const CATT = db.collection('lecture_att');                  // doc(受講生カルテのstudentId) = { marks:{ lectureId:'present'|'absent' } }
 
 /* ===== state ===== */
-let roster = { students: [], lectures: [] };
-let attCache = {};           // { studentId: { lectureId: 'present'|'absent' } }
-let rLoaded = false, aLoaded = false;
+let kData = { students: [], terms: [] };   // カルテの名簿（受講生・期）＝読み取り専用
+let lectures = [];                          // 講義日（出欠アプリが所有）
+let attCache = {};                          // { 受講生ID: { lectureId: 'present'|'absent' } }
+let kLoaded=false, lLoaded=false, aLoaded=false;
 let currentTab = 'student';
-let adminUnlocked = false;
-const ADMIN_PW = '1111';
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),2200);}
 function fmtDate(d){if(!d)return'';const p=d.split('-');const wd=['日','月','火','水','木','金','土'][new Date(d+'T00:00:00').getDay()];return `${Number(p[1])}月${Number(p[2])}日(${wd})`;}
 function esc(s){return(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
-function sortedLectures(){return[...roster.lectures].sort((a,b)=>a.date.localeCompare(b.date));}
+function allStudents(){ return kData.students||[]; }
+function sortedLectures(){return[...lectures].sort((a,b)=>(a.date||'').localeCompare(b.date||''));}
 function loadAtt(sid){ return attCache[sid] || {}; }
+function studentsByTerm(){
+  const groups=[];
+  (kData.terms||[]).forEach(t=>groups.push({term:t, list:allStudents().filter(s=>s.termId===t.id)}));
+  const unc=allStudents().filter(s=>!s.termId || !(kData.terms||[]).some(t=>t.id===s.termId));
+  if(unc.length) groups.push({term:{id:'',name:'未分類'}, list:unc});
+  return groups;
+}
 
 /* ===== Firestore 保存 ===== */
-async function saveRoster(){ try{ await DROSTER.set(roster); }catch(e){ toast('保存に失敗しました（通信をご確認ください）'); throw e; } }
+async function saveLectures(){ try{ await LROSTER.set({ lectures }, {merge:true}); }catch(e){ toast('保存に失敗しました（通信をご確認ください）'); throw e; } }
 async function saveAtt(sid, marks){ try{ await CATT.doc(sid).set({ marks }); }catch(e){ throw e; } }
 
 /* ===== リアルタイム購読 ===== */
-DROSTER.onSnapshot(s=>{ const d=s.exists?s.data():null; roster={students:(d&&d.students)||[],lectures:(d&&d.lectures)||[]}; rLoaded=true; onData(); },
+// 受講生・期は「受講生カルテ」を唯一のソースとして読み取り（このアプリでは編集しない）
+KDOC.onSnapshot(s=>{ const d=s.exists?s.data():null; kData={students:(d&&d.students)||[],terms:(d&&d.terms)||[]}; kLoaded=true; onData(); },
   ()=>{ document.getElementById('view').innerHTML='<div class="card"><p class="hint danger">データベースに接続できませんでした。少し待って再読み込みしてください。</p></div>'; });
+LROSTER.onSnapshot(s=>{ const d=s.exists?s.data():null; lectures=(d&&d.lectures)||[]; lLoaded=true; onData(); }, ()=>{});
 CATT.onSnapshot(s=>{ attCache={}; s.forEach(doc=>{ attCache[doc.id]=(doc.data()&&doc.data().marks)||{}; }); aLoaded=true; onData(); }, ()=>{});
 
-function onData(){ if(!rLoaded||!aLoaded) return; if(currentTab==='admin'){ adminUnlocked?renderAdmin():renderAdminLock(); } else if(!stu.sid) renderStudent(); }
+function onData(){ if(!kLoaded||!lLoaded||!aLoaded) return; if(currentTab==='admin') renderAdmin(); else if(!stu.sid) renderStudent(); }
 function switchTab(t){currentTab=t;document.getElementById('tabStudent').setAttribute('aria-selected',t==='student');document.getElementById('tabAdmin').setAttribute('aria-selected',t==='admin');render();}
-function render(){ if(currentTab==='admin'){ adminUnlocked?renderAdmin():renderAdminLock(); } else renderStudent(); }
-function renderAdminLock(){
-  const view=document.getElementById('view');
-  view.innerHTML=`
-    <div class="card">
-      <h2><span class="n">🔒</span>管理者ログイン</h2>
-      <p class="hint">管理者用パスワードを入力してください。</p>
-      <div class="row" style="margin-top:6px">
-        <input type="password" id="admPw" class="grow" placeholder="パスワード" onkeydown="if(event.key==='Enter')tryUnlock()">
-        <button class="btn sm" onclick="tryUnlock()">ログイン</button>
-      </div>
-    </div>`;
-  setTimeout(()=>{const e=document.getElementById('admPw'); if(e) e.focus();},0);
-}
-function tryUnlock(){
-  const v=(document.getElementById('admPw')||{}).value||'';
-  if(v===ADMIN_PW){ adminUnlocked=true; toast('ログインしました'); renderAdmin(); }
-  else { toast('パスワードが違います'); const e=document.getElementById('admPw'); if(e){ e.value=''; e.focus(); } }
-}
+function render(){ currentTab==='admin' ? renderAdmin() : renderStudent(); }
 
 /* ================= 受講生ビュー ================= */
 let stu={sid:null, saved:{}, draft:{}, editing:new Set()};
 function renderStudent(){
   const view=document.getElementById('view');
-  if(!roster.students.length||!roster.lectures.length){
-    view.innerHTML=`<div class="card"><h2><span class="n">!</span>準備中です</h2><p class="hint">管理者が受講生と講義日を登録すると、ここから出欠を送信できます。</p></div>`; return;
+  if(!allStudents().length||!lectures.length){
+    view.innerHTML=`<div class="card"><h2><span class="n">!</span>準備中です</h2><p class="hint">受講生カルテに受講生が登録され、管理者が講義日を登録すると、ここから出欠を送信できます。</p></div>`; return;
   }
-  const opts=roster.students.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  const opts=studentsByTerm().map(g=>`<optgroup label="${esc(g.term.name)}">${g.list.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</optgroup>`).join('');
   view.innerHTML=`
     <div class="card">
       <h2><span class="n">1</span>お名前を選択</h2>
@@ -159,7 +151,7 @@ function renderStudent(){
       <select id="stuSel" onchange="onStudentPick()"><option value="">— 選択してください —</option>${opts}</select>
     </div>
     <div id="stuForm"></div>`;
-  if(stu.sid && roster.students.some(s=>s.id===stu.sid)){ document.getElementById('stuSel').value=stu.sid; renderStuForm(); }
+  if(stu.sid && allStudents().some(s=>s.id===stu.sid)){ document.getElementById('stuSel').value=stu.sid; renderStuForm(); }
 }
 function onStudentPick(){
   const sid=document.getElementById('stuSel').value;
@@ -211,36 +203,29 @@ async function submitAtt(){
   stu.editing.forEach(lid=>{ if(stu.draft[lid]!==undefined){ next[lid]=stu.draft[lid]; n++; } });
   if(n===0){ toast('出席／欠席を選んでください'); return; }
   try{ await saveAtt(stu.sid, next); stu.saved=next; stu.draft={...next}; stu.editing=new Set(); renderStuForm();
-    const name=(roster.students.find(s=>s.id===stu.sid)||{}).name||''; toast(`${name} さんの出欠を送信しました`);
+    const name=(allStudents().find(s=>s.id===stu.sid)||{}).name||''; toast(`${name} さんの出欠を送信しました`);
   }catch(e){ toast('送信に失敗しました。もう一度お試しください'); }
 }
 
 /* ================= 管理者ビュー（集計を一番上に） ================= */
 function renderAdmin(){
   const view=document.getElementById('view');
-  const stuChips=roster.students.length
-    ? `<div class="chips">${roster.students.map(s=>`<span class="chip">${esc(s.name)}<button title="削除" onclick="delStudent('${s.id}')">×</button></span>`).join('')}</div>`
-    : `<div class="empty">まだ受講生が登録されていません。</div>`;
-  const lecChips=roster.lectures.length
+  const lecChips=lectures.length
     ? `<div class="chips">${sortedLectures().map(l=>`<span class="chip">${fmtDate(l.date)}${l.label?' ・ '+esc(l.label):''}<button title="削除" onclick="delLecture('${l.id}')">×</button></span>`).join('')}</div>`
     : `<div class="empty">まだ講義日が登録されていません。</div>`;
+  const rosterGrouped=allStudents().length
+    ? studentsByTerm().map(g=>`<div style="margin-top:14px"><div style="font-weight:700;font-size:13px;color:var(--aqua-deep);margin-bottom:6px">${esc(g.term.name)}（${g.list.length}名）</div><div class="chips">${g.list.map(s=>`<span class="chip" style="padding-right:13px">${esc(s.name)}</span>`).join('')||'<span class="empty">なし</span>'}</div></div>`).join('')
+    : `<div class="empty" style="margin-top:12px">受講生カルテに受講生が登録されると、ここに表示されます。</div>`;
   view.innerHTML=`
     <div class="card">
-      <h2><span class="n">1</span>出欠状況一覧</h2>
-      <p class="hint">○＝出席／×＝欠席／−＝未送信。受講生の送信がリアルタイムで反映されます。</p>
+      <h2><span class="n">1</span>出欠状況一覧<button class="btn ghost sm" style="margin-left:auto" onclick="exportAttendanceCsv()">📄 CSVで書き出す</button></h2>
+      <p class="hint">○＝出席／×＝欠席／−＝未送信。受講生の送信がリアルタイムで反映されます。期ごとに表示します。</p>
       <div id="grid" class="loading">集計中…</div>
     </div>
     <div class="card">
-      <h2><span class="n">2</span>受講生一覧</h2>
-      <p class="hint">名前を1行に1名で入力（複数まとめて貼り付けOK）。</p>
-      <textarea id="stuInput" placeholder="山田 花子&#10;佐藤 太郎&#10;鈴木 美咲"></textarea>
-      <div class="row" style="margin-top:10px;flex-wrap:wrap;gap:8px">
-        <button class="btn sm" onclick="addStudents()">追加する</button>
-        <button class="btn sm ghost" onclick="document.getElementById('csvFile').click()">CSVから取り込み</button>
-        <input type="file" id="csvFile" accept=".csv,text/csv" onchange="onCsvFile(this)" style="display:none">
-      </div>
-      <p class="hint" style="margin-top:8px">CSVの「名前」列から自動で取り込みます（重複は自動でスキップ）。</p>
-      ${stuChips}
+      <h2><span class="n">2</span>受講生一覧（期ごと）</h2>
+      <p class="hint">受講生の登録は<b>受講生カルテ</b>で行います。ここではカルテに登録された名簿をそのまま読み込んで表示します（二重登録は不要）。</p>
+      ${rosterGrouped}
     </div>
     <div class="card">
       <h2><span class="n">3</span>講義日</h2>
@@ -250,100 +235,72 @@ function renderAdmin(){
     </div>
     <div class="card">
       <h2><span class="n">⚙</span>データ管理</h2>
-      <p class="hint">データはクラウドに保存され、このURLを開いた全員が同じ内容をリアルタイムで見られます。</p>
-      <p class="hint danger">下は全データを消去します（取り消せません）。</p>
-      <button class="btn ghost sm danger" onclick="resetAll()">全データを消去</button>
+      <p class="hint">出欠・講義日はクラウドに保存され、このURLを開いた全員が同じ内容をリアルタイムで見られます。受講生の名簿は受講生カルテ側で管理します。</p>
+      <p class="hint danger">下は出欠データと講義日を消去します（受講生カルテの名簿は消えません／取り消せません）。</p>
+      <button class="btn ghost sm danger" onclick="resetAll()">出欠データ・講義日を消去</button>
     </div>`;
   buildGrid();
 }
-/* ===== 受講生の追加・CSV取り込み ===== */
-function normName(n){ return (n||'').replace(/\s+/g,' ').trim(); }
-function nameKey(n){ return (n||'').replace(/\s+/g,''); }
-
-/* CSVパーサ（引用符・埋め込み改行に対応） */
-function parseCSV(text){
-  text=String(text).replace(/^\uFEFF/,''); const rows=[]; let row=[],f='',q=false;
-  for(let i=0;i<text.length;i++){ const c=text[i];
-    if(q){ if(c==='"'){ if(text[i+1]==='"'){ f+='"'; i++; } else { q=false; } } else { f+=c; } continue; }
-    if(c==='"'){ q=true; }
-    else if(c===','){ row.push(f); f=''; }
-    else if(c==='\n'){ row.push(f); rows.push(row); row=[]; f=''; }
-    else if(c!=='\r'){ f+=c; }
-  }
-  if(f!==''||row.length){ row.push(f); rows.push(row); }
-  return rows;
-}
-function namesFromCsv(text){
-  const rows=parseCSV(text).filter(r=>r.some(c=>c&&c.trim())); if(!rows.length) return [];
-  const header=rows[0].map(h=>h.trim());
-  let col=header.findIndex(h=>/^(名前|氏名|お名前)$/.test(h));
-  const start=col>=0?1:0; if(col<0) col=0;
-  const out=[]; for(let i=start;i<rows.length;i++){ const v=normName(rows[i][col]||''); if(v) out.push(v); }
-  return out;
-}
-
-async function addStudentNames(names){
-  names=(names||[]).map(normName).filter(Boolean);
-  if(!names.length){ toast('名前が見つかりませんでした'); return 0; }
-  const have=new Set(roster.students.map(s=>nameKey(s.name)));
-  const fresh=[]; const seen=new Set();
-  for(const n of names){ const k=nameKey(n); if(have.has(k)||seen.has(k)) continue; seen.add(k); fresh.push(n); }
-  if(!fresh.length){ toast('すでに登録済みの名前でした'); return 0; }
-  fresh.forEach(n=>roster.students.push({id:uid(),name:n}));
-  try{ await saveRoster(); }catch(e){ return 0; }
-  toast(`${fresh.length}名を追加しました`);
-  return fresh.length;
-}
-async function addStudents(){
-  const ta=document.getElementById('stuInput');
-  const n=await addStudentNames((ta.value||'').split('\n'));
-  if(n>0) ta.value='';
-}
-function onCsvFile(input){
-  const f=input.files&&input.files[0]; if(!f){ return; }
-  const rd=new FileReader();
-  rd.onload=async()=>{ const names=namesFromCsv(String(rd.result||'')); input.value='';
-    if(!names.length){ toast('「名前」列が見つかりませんでした'); return; }
-    await addStudentNames(names);
-  };
-  rd.onerror=()=>toast('ファイルを読めませんでした');
-  rd.readAsText(f);
-}
-async function delStudent(id){ roster.students=roster.students.filter(s=>s.id!==id); try{ await saveRoster(); await CATT.doc(id).delete(); }catch(e){} }
 async function addLecture(){
   const d=document.getElementById('lecDate').value; const lbl=document.getElementById('lecLabel').value.trim();
   if(!d){ toast('日付を選んでください'); return; }
-  roster.lectures.push({id:uid(),date:d,label:lbl}); try{ await saveRoster(); toast('講義日を追加しました'); }catch(e){}
+  lectures.push({id:uid(),date:d,label:lbl}); try{ await saveLectures(); toast('講義日を追加しました'); }catch(e){}
 }
-async function delLecture(id){ roster.lectures=roster.lectures.filter(l=>l.id!==id); try{ await saveRoster(); }catch(e){} }
+async function delLecture(id){ lectures=lectures.filter(l=>l.id!==id); try{ await saveLectures(); }catch(e){} }
 
 function buildGrid(){
   const el=document.getElementById('grid'); if(!el) return;
-  if(!roster.students.length){ el.innerHTML=`<div class="empty">受講生を登録すると、ここに一覧が表示されます。</div>`; return; }
+  if(!allStudents().length){ el.innerHTML=`<div class="empty">受講生カルテに受講生が登録されると、ここに一覧が表示されます。</div>`; return; }
   const lecs=sortedLectures();
   if(!lecs.length){
-    const rows=roster.students.map(s=>`<tr><th>${esc(s.name)}</th></tr>`).join('');
+    const rows=allStudents().map(s=>`<tr><th>${esc(s.name)}</th></tr>`).join('');
     el.innerHTML=`<div class="tablewrap"><table><thead><tr><th>受講生</th></tr></thead><tbody>${rows}</tbody></table></div><div class="empty" style="margin-top:8px">講義日を登録すると出欠列が追加されます。</div>`; return;
   }
   const head='<tr><th>受講生 ＼ 講義日</th>'+lecs.map(l=>`<th>${fmtDate(l.date)}${l.label?'<br><span style="font-weight:400;font-size:11px">'+esc(l.label)+'</span>':''}</th>`).join('')+'</tr>';
-  const body=roster.students.map(s=>{
-    const a=loadAtt(s.id);
-    const cells=lecs.map(l=>{ const v=a[l.id];
-      if(v==='present')return'<td><span class="o">○</span></td>';
-      if(v==='absent')return'<td><span class="x">×</span></td>';
-      return'<td><span class="dash">−</span></td>'; }).join('');
-    return `<tr><th>${esc(s.name)}</th>${cells}</tr>`;
+  const body=studentsByTerm().map(g=>{
+    const gh=`<tr><th colspan="${lecs.length+1}" style="text-align:left;background:var(--aqua-soft);color:var(--aqua-deep)">${esc(g.term.name)}（${g.list.length}名）</th></tr>`;
+    const rows=g.list.map(s=>{
+      const a=loadAtt(s.id);
+      const cells=lecs.map(l=>{ const v=a[l.id];
+        if(v==='present')return'<td><span class="o">○</span></td>';
+        if(v==='absent')return'<td><span class="x">×</span></td>';
+        return'<td><span class="dash">−</span></td>'; }).join('');
+      return `<tr><th>${esc(s.name)}</th>${cells}</tr>`;
+    }).join('');
+    return gh+rows;
   }).join('');
-  let present=0,absent=0; const total=roster.students.length*lecs.length;
-  for(const s of roster.students){ const a=loadAtt(s.id); for(const l of lecs){ if(a[l.id]==='present')present++; else if(a[l.id]==='absent')absent++; } }
+  let present=0,absent=0; const total=allStudents().length*lecs.length;
+  for(const s of allStudents()){ const a=loadAtt(s.id); for(const l of lecs){ if(a[l.id]==='present')present++; else if(a[l.id]==='absent')absent++; } }
   el.innerHTML=`<div class="tablewrap"><table><thead>${head}</thead><tbody>${body}</tbody></table></div>
     <div class="stat"><div>出席 <span>${present}</span></div><div>欠席 <span>${absent}</span></div><div>未送信 <span>${total-present-absent}</span></div></div>`;
 }
+/* ===== 受講生カルテ向け CSV 書き出し ===== */
+function csvCell(s){ s=(s==null?'':String(s)); return /[",\n\r]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; }
+function exportAttendanceCsv(){
+  if(!allStudents().length){ toast('受講生が登録されていません'); return; }
+  const lecs=sortedLectures();
+  // ヘッダー：期・名前＋講義日ごとの列
+  const header=['期','名前', ...lecs.map(l=> fmtDate(l.date) + (l.label ? ' '+l.label : ''))];
+  const lines=[header.map(csvCell).join(',')];
+  studentsByTerm().forEach(g=>{
+    g.list.forEach(s=>{
+      const a=loadAtt(s.id);
+      const cells=[g.term.name, s.name, ...lecs.map(l=>{ const v=a[l.id]; return v==='present'?'○':(v==='absent'?'×':''); })];
+      lines.push(cells.map(csvCell).join(','));
+    });
+  });
+  const csv='\ufeff'+lines.join('\r\n'); // BOM付きでExcelでも文字化けしない
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob); const a=document.createElement('a');
+  const d=new Date(); const stamp=`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+  a.href=url; a.download=`出欠状況一覧_${stamp}.csv`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),500);
+  toast('CSVを書き出しました');
+}
 async function resetAll(){
-  if(!confirm('全データを消去します。よろしいですか？'))return;
+  if(!confirm('出欠データと講義日を消去します（受講生カルテの名簿は消えません）。よろしいですか？'))return;
   try{
     const snap=await CATT.get(); const batch=db.batch(); snap.forEach(d=>batch.delete(d.ref)); await batch.commit();
-    await DROSTER.delete(); toast('すべて消去しました');
+    await LROSTER.delete(); toast('出欠データ・講義日を消去しました');
   }catch(e){ toast('消去に失敗しました'); }
 }
 </script>
