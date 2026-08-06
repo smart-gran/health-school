@@ -258,7 +258,10 @@ function matchStudents(name, email){
 }
 
 /* ============ router ============ */
-function go(name, opts={}){ view={name, termId:opts.termId??null, campId:opts.campId??null, studentId:opts.studentId??null}; window.scrollTo(0,0); render(); }
+function go(name, opts={}){
+  if(query){ query=''; const si=document.getElementById('searchInput'); if(si) si.value=''; }  // 検索から遷移したら検索を解除
+  view={name, termId:opts.termId??null, campId:opts.campId??null, studentId:opts.studentId??null}; window.scrollTo(0,0); render();
+}
 
 /* ============ render ============ */
 function render(){
