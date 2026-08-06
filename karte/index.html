@@ -71,6 +71,9 @@
   .term-card .tcount{color:var(--ink-soft); font-size:13px; margin-top:6px}
   .term-card .tafter{margin-top:10px}
   .term-card .corner{position:absolute; top:14px; right:14px; font-size:11px; font-weight:700; letter-spacing:.08em; color:var(--apricot-ink); background:var(--apricot-wash); padding:2px 8px; border-radius:999px}
+  .term-card .reorder{position:absolute; top:12px; right:12px; display:flex; gap:4px}
+  .term-card .reorder .btn{padding:2px 9px; line-height:1.2; font-size:14px; background:var(--surface)}
+  .btn:disabled{opacity:.3; cursor:default; pointer-events:none}
 
   .pill{display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:700; padding:3px 10px; border-radius:999px; letter-spacing:.02em; white-space:nowrap}
   .pill.enroll,.pill.re{background:var(--teal-wash); color:var(--teal-deep)}
@@ -276,9 +279,13 @@ function render(){
 
 function renderHome(){
   const afterCount=afterStudents().length;
-  const termCards=DATA.terms.map(t=>{
+  const termCards=DATA.terms.map((t,idx)=>{
     const list=studentsOf(t.id); const aft=list.filter(s=>s.isAfter).length;
     return `<div class="card term-card" onclick="go('term',{termId:'${t.id}'})">
+      <div class="reorder" onclick="event.stopPropagation()">
+        <button class="btn ghost small" onclick="moveTerm('${t.id}',-1)" title="前へ" ${idx===0?'disabled':''}>↑</button>
+        <button class="btn ghost small" onclick="moveTerm('${t.id}',1)" title="後へ" ${idx===DATA.terms.length-1?'disabled':''}>↓</button>
+      </div>
       <div class="tname">${esc(t.name)}</div>
       <div class="tcount">受講生 ${list.length}名</div>
       ${aft?`<div class="tafter">${afterPill()} ${aft}名</div>`:''}
@@ -401,10 +408,9 @@ function renderStudent(){
   }
 
   // camps
-  const myCamps=DATA.camps.filter(c=>(s.camps||[]).includes(c.id));
-  const campHTML = myCamps.length
-    ? `<div class="camp-tags">${myCamps.map(c=>`<span class="pill camp">${esc(c.name)}参加</span>`).join('')}</div>`
-    : `<p class="sub">参加している合宿はありません。</p>`;
+  const campHTML = DATA.camps.length
+    ? `<div class="checklist">${DATA.camps.map(c=>`<label><input type="checkbox" ${(s.camps||[]).includes(c.id)?'checked':''} onchange="toggleCamp('${s.id}','${c.id}',this.checked)"> ${esc(c.name)}</label>`).join('')}</div>`
+    : `<p class="sub">トップの「合宿」で合宿を追加すると、ここに参加のチェックを付けられます。</p>`;
 
   // timeline
   const tl=log.map(e=>{
@@ -446,11 +452,6 @@ function renderStudent(){
       </div>
 
       <div class="section">
-        <h3>合宿<button class="btn ghost small edit" onclick="editCamps('${s.id}')">編集</button></h3>
-        ${campHTML}
-      </div>
-
-      <div class="section">
         <h3>アフター生</h3>
         <label class="checkline ${s.isAfter?'on':''}" id="afterLine">
           <input type="checkbox" ${s.isAfter?'checked':''} onchange="toggleAfter('${s.id}',this.checked)">
@@ -468,6 +469,11 @@ function renderStudent(){
           <div class="field note-f"><label>メモ（任意）</label><input id="log_note" placeholder="例：〇月に退会、△月に再入会"></div>
           <div class="field add-f"><label>&nbsp;</label><button class="btn primary" onclick="addLog('${s.id}')">記録を追加</button></div>
         </div>
+      </div>
+
+      <div class="section">
+        <h3>合宿</h3>
+        ${campHTML}
       </div>
 
       <div class="section">
@@ -548,18 +554,22 @@ async function submitStudent(termId){ const name=document.getElementById('m_name
   const s={id:uid(),termId,name,email:document.getElementById('m_email').value.trim(),address:document.getElementById('m_addr').value.trim(),memo:'',isAfter:false,log:[],camps:[],att:[]};
   DATA.students.push(s); await persist(); closeModal(); render(); toast('追加しました'); }
 
-/* ---- edit camps from karte ---- */
-function editCamps(sid){
-  const s=studentById(sid); if(!s) return;
-  if(!DATA.camps.length){ resultModal('合宿がありません','先にホームの「合宿」で合宿を追加してください。'); return; }
-  const items=DATA.camps.map(c=>`<label><input type="checkbox" value="${c.id}" ${(s.camps||[]).includes(c.id)?'checked':''}> ${esc(c.name)}</label>`).join('');
-  openModal(`<div class="modal"><h3>合宿の参加を編集</h3><p class="mdesc">${esc(s.name)}さんが参加した合宿を選択してください。</p>
-    <div class="checklist" id="campChecks">${items}</div>
-    <div class="row"><div class="spacer"></div><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn primary" onclick="saveCamps('${sid}')">保存</button></div></div>`);
+/* ---- reorder terms on home ---- */
+async function moveTerm(id, dir){
+  const i=DATA.terms.findIndex(t=>t.id===id); if(i<0) return;
+  const j=i+dir; if(j<0||j>=DATA.terms.length) return;
+  const [t]=DATA.terms.splice(i,1); DATA.terms.splice(j,0,t);
+  await persist(); render();
 }
-async function saveCamps(sid){ const s=studentById(sid); if(!s) return;
-  const checks=[...document.querySelectorAll('#campChecks input:checked')].map(i=>i.value);
-  s.camps=checks; await persist(); closeModal(); render(); toast('保存しました'); }
+
+/* ---- toggle camp participation inline (checkbox in karte) ---- */
+async function toggleCamp(sid, cid, on){
+  const s=studentById(sid); if(!s) return;
+  s.camps=s.camps||[];
+  if(on){ if(!s.camps.includes(cid)) s.camps.push(cid); }
+  else { s.camps=s.camps.filter(x=>x!==cid); }
+  await persist(); toast('保存しました');
+}
 
 /* ---- CSV: term roster ---- */
 function openCsv(termId){
