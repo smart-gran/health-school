@@ -106,6 +106,8 @@ let activeTerms = [];                        // 出欠に表示する期のID配
 let attCache = {};                          // { 受講生ID: { lectureId: 'present'|'absent' } }
 let kLoaded=false, lLoaded=false, aLoaded=false;
 let currentTab = 'student';
+const ADMIN_PASS = '1111';   // 管理画面パスワード
+let adminAuthed = false;
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),2200);}
@@ -139,9 +141,22 @@ KDOC.onSnapshot(s=>{ const d=s.exists?s.data():null; kData={students:(d&&d.stude
 LROSTER.onSnapshot(s=>{ const d=s.exists?s.data():null; lectures=(d&&d.lectures)||[]; activeTerms=(d&&d.activeTerms)||[]; lLoaded=true; onData(); }, ()=>{});
 CATT.onSnapshot(s=>{ attCache={}; s.forEach(doc=>{ attCache[doc.id]=(doc.data()&&doc.data().marks)||{}; }); aLoaded=true; onData(); }, ()=>{});
 
-function onData(){ if(!kLoaded||!lLoaded||!aLoaded) return; if(currentTab==='admin') renderAdmin(); else if(!stu.sid) renderStudent(); }
+function onData(){ if(!kLoaded||!lLoaded||!aLoaded) return; if(currentTab==='admin'){ if(adminAuthed) renderAdmin(); } else if(!stu.sid) renderStudent(); }
 function switchTab(t){currentTab=t;document.getElementById('tabStudent').setAttribute('aria-selected',t==='student');document.getElementById('tabAdmin').setAttribute('aria-selected',t==='admin');render();}
-function render(){ currentTab==='admin' ? renderAdmin() : renderStudent(); }
+function render(){ if(currentTab==='admin'){ adminAuthed ? renderAdmin() : renderAdminGate(); } else renderStudent(); }
+function renderAdminGate(){
+  const view=document.getElementById('view');
+  view.innerHTML=`<div class="card"><h2>管理者ログイン</h2>
+    <p class="hint">管理画面を開くにはパスワードを入力してください。</p>
+    <div class="row"><input type="password" id="adminPass" placeholder="パスワード" class="grow" onkeydown="if(event.key==='Enter')checkAdminPass()"><button class="btn sm" onclick="checkAdminPass()">ログイン</button></div>
+  </div>`;
+  setTimeout(()=>{const el=document.getElementById('adminPass'); if(el) el.focus();},30);
+}
+function checkAdminPass(){
+  const el=document.getElementById('adminPass'); const v=el?el.value:'';
+  if(v===ADMIN_PASS){ adminAuthed=true; renderAdmin(); }
+  else { toast('パスワードが違います'); if(el){ el.value=''; el.focus(); } }
+}
 
 /* ================= 受講生ビュー ================= */
 let stu={sid:null, saved:{}, draft:{}, editing:new Set()};
@@ -220,9 +235,6 @@ function renderAdmin(){
   const lecChips=lectures.length
     ? `<div class="chips">${sortedLectures().map(l=>`<span class="chip">${fmtDate(l.date)}${l.label?' ・ '+esc(l.label):''}<button title="削除" onclick="delLecture('${l.id}')">×</button></span>`).join('')}</div>`
     : `<div class="empty">まだ講義日が登録されていません。</div>`;
-  const rosterGrouped=allStudents().length
-    ? studentsByTerm().map(g=>`<div style="margin-top:14px"><div style="font-weight:700;font-size:13px;color:var(--aqua-deep);margin-bottom:6px">${esc(g.term.name)}（${g.list.length}名）${isTermActive(g.term.id)?'':' <span style="color:var(--muted);font-weight:400">・出欠非表示</span>'}</div><div class="chips">${g.list.map(s=>`<span class="chip" style="padding-right:13px">${esc(s.name)}</span>`).join('')||'<span class="empty">なし</span>'}</div></div>`).join('')
-    : `<div class="empty" style="margin-top:12px">受講生カルテに受講生が登録されると、ここに表示されます。</div>`;
   const termToggles=studentsByTerm().length
     ? `<div class="chips">${studentsByTerm().map(g=>`<label class="chip" style="cursor:pointer;gap:7px;padding-left:11px"><input type="checkbox" ${activeTerms.includes(g.term.id)?'checked':''} onchange="toggleActiveTerm('${g.term.id}')" style="width:16px;height:16px;accent-color:var(--aqua)"> ${esc(g.term.name)}（${g.list.length}）</label>`).join('')}</div>`
     : `<div class="empty">受講生カルテに期が登録されると、ここで選べます。</div>`;
@@ -238,12 +250,7 @@ function renderAdmin(){
       ${termToggles}
     </div>
     <div class="card">
-      <h2><span class="n">3</span>受講生一覧（期ごと）</h2>
-      <p class="hint">受講生の登録は<b>受講生カルテ</b>で行います。ここではカルテに登録された名簿をそのまま読み込んで表示します（二重登録は不要）。</p>
-      ${rosterGrouped}
-    </div>
-    <div class="card">
-      <h2><span class="n">4</span>講義日</h2>
+      <h2><span class="n">3</span>講義日</h2>
       <p class="hint">日付と、任意で回のテーマ（例：第1回 腸活の基本）を登録します。</p>
       <div class="row"><input type="date" id="lecDate" style="flex:0 0 170px"><input type="text" id="lecLabel" placeholder="回・テーマ（任意）" class="grow"><button class="btn sm" onclick="addLecture()">追加</button></div>
       ${lecChips}
