@@ -297,7 +297,6 @@ function renderHome(){
     <div class="toolbar">
       <h2 class="view-title" style="margin:0">ホーム</h2>
       <div class="spacer"></div>
-      <button class="btn" onclick="go('after')">アフター生一覧 ${afterCount?`(${afterCount})`:''}</button>
       <button class="btn ghost small" onclick="openBackup()">バックアップ</button>
     </div>
 
@@ -308,6 +307,15 @@ function renderHome(){
       </div>
       ${DATA.terms.length?`<div class="grid terms">${termCards}</div>`:
         `<div class="card empty"><div class="big">まだ期がありません</div>「＋ 期を追加」から最初の期（例：1期）を作成してください。</div>`}
+    </div>
+
+    <div class="home-sec">
+      <div class="sec-head"><h3>アフター生</h3><span class="tag">チェックした人の一覧</span></div>
+      <div class="card term-card camp" onclick="go('after')">
+        <div class="corner">一覧</div>
+        <div class="tname">アフター生</div>
+        <div class="tcount">${afterCount}名</div>
+      </div>
     </div>
 
     <div class="home-sec">
@@ -365,7 +373,7 @@ function rowHTML(s, showTerm=false){
   const badges=[];
   if(asum) badges.push(`<span class="pill enroll"><span class="dot"></span>出席${asum.present}/${asum.total}</span>`);
   if(s.isAfter) badges.push(afterPill());
-  badges.push(statusPill(s));
+  if(statusOf(s).key!=='enroll') badges.push(statusPill(s));  // 在籍中は表示しない（退会・再入会のみ）
   return `<div class="st-row" onclick="go('student',{studentId:'${s.id}'})">
     <div class="st-main">
       <div class="st-name">${esc(s.name)}</div>
