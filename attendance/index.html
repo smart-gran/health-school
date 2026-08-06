@@ -102,6 +102,7 @@ const CATT = db.collection('lecture_att');                  // doc(受講生カ�
 /* ===== state ===== */
 let kData = { students: [], terms: [] };   // カルテの名簿（受講生・期）＝読み取り専用
 let lectures = [];                          // 講義日（出欠アプリが所有）
+let activeTerms = [];                        // 出欠に表示する期のID配列（空＝全期表示）
 let attCache = {};                          // { 受講生ID: { lectureId: 'present'|'absent' } }
 let kLoaded=false, lLoaded=false, aLoaded=false;
 let currentTab = 'student';
@@ -120,16 +121,22 @@ function studentsByTerm(){
   if(unc.length) groups.push({term:{id:'',name:'未分類'}, list:unc});
   return groups;
 }
+// 出欠に表示する期のフィルタ（activeTermsが空なら全期表示）
+function isTermActive(id){ return !activeTerms.length || activeTerms.includes(id||''); }
+function activeGroups(){ return studentsByTerm().filter(g=>isTermActive(g.term.id)); }
+function activeStudents(){ return allStudents().filter(s=>isTermActive(s.termId||'')); }
 
 /* ===== Firestore 保存 ===== */
 async function saveLectures(){ try{ await LROSTER.set({ lectures }, {merge:true}); }catch(e){ toast('保存に失敗しました（通信をご確認ください）'); throw e; } }
+async function saveActiveTerms(){ try{ await LROSTER.set({ activeTerms }, {merge:true}); }catch(e){ toast('保存に失敗しました（通信をご確認ください）'); throw e; } }
 async function saveAtt(sid, marks){ try{ await CATT.doc(sid).set({ marks }); }catch(e){ throw e; } }
+async function toggleActiveTerm(id){ const i=activeTerms.indexOf(id); if(i>=0)activeTerms.splice(i,1); else activeTerms.push(id); try{ await saveActiveTerms(); }catch(e){} }
 
 /* ===== リアルタイム購読 ===== */
 // 受講生・期は「受講生カルテ」を唯一のソースとして読み取り（このアプリでは編集しない）
 KDOC.onSnapshot(s=>{ const d=s.exists?s.data():null; kData={students:(d&&d.students)||[],terms:(d&&d.terms)||[]}; kLoaded=true; onData(); },
   ()=>{ document.getElementById('view').innerHTML='<div class="card"><p class="hint danger">データベースに接続できませんでした。少し待って再読み込みしてください。</p></div>'; });
-LROSTER.onSnapshot(s=>{ const d=s.exists?s.data():null; lectures=(d&&d.lectures)||[]; lLoaded=true; onData(); }, ()=>{});
+LROSTER.onSnapshot(s=>{ const d=s.exists?s.data():null; lectures=(d&&d.lectures)||[]; activeTerms=(d&&d.activeTerms)||[]; lLoaded=true; onData(); }, ()=>{});
 CATT.onSnapshot(s=>{ attCache={}; s.forEach(doc=>{ attCache[doc.id]=(doc.data()&&doc.data().marks)||{}; }); aLoaded=true; onData(); }, ()=>{});
 
 function onData(){ if(!kLoaded||!lLoaded||!aLoaded) return; if(currentTab==='admin') renderAdmin(); else if(!stu.sid) renderStudent(); }
@@ -140,10 +147,10 @@ function render(){ currentTab==='admin' ? renderAdmin() : renderStudent(); }
 let stu={sid:null, saved:{}, draft:{}, editing:new Set()};
 function renderStudent(){
   const view=document.getElementById('view');
-  if(!allStudents().length||!lectures.length){
-    view.innerHTML=`<div class="card"><h2><span class="n">!</span>準備中です</h2><p class="hint">受講生カルテに受講生が登録され、管理者が講義日を登録すると、ここから出欠を送信できます。</p></div>`; return;
+  if(!activeStudents().length||!lectures.length){
+    view.innerHTML=`<div class="card"><h2><span class="n">!</span>準備中です</h2><p class="hint">受講生カルテに受講生が登録され、管理者が講義日と「出欠に表示する期」を設定すると、ここから出欠を送信できます。</p></div>`; return;
   }
-  const opts=studentsByTerm().map(g=>`<optgroup label="${esc(g.term.name)}">${g.list.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</optgroup>`).join('');
+  const opts=activeGroups().map(g=>`<optgroup label="${esc(g.term.name)}">${g.list.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</optgroup>`).join('');
   view.innerHTML=`
     <div class="card">
       <h2><span class="n">1</span>お名前を選択</h2>
@@ -214,8 +221,11 @@ function renderAdmin(){
     ? `<div class="chips">${sortedLectures().map(l=>`<span class="chip">${fmtDate(l.date)}${l.label?' ・ '+esc(l.label):''}<button title="削除" onclick="delLecture('${l.id}')">×</button></span>`).join('')}</div>`
     : `<div class="empty">まだ講義日が登録されていません。</div>`;
   const rosterGrouped=allStudents().length
-    ? studentsByTerm().map(g=>`<div style="margin-top:14px"><div style="font-weight:700;font-size:13px;color:var(--aqua-deep);margin-bottom:6px">${esc(g.term.name)}（${g.list.length}名）</div><div class="chips">${g.list.map(s=>`<span class="chip" style="padding-right:13px">${esc(s.name)}</span>`).join('')||'<span class="empty">なし</span>'}</div></div>`).join('')
+    ? studentsByTerm().map(g=>`<div style="margin-top:14px"><div style="font-weight:700;font-size:13px;color:var(--aqua-deep);margin-bottom:6px">${esc(g.term.name)}（${g.list.length}名）${isTermActive(g.term.id)?'':' <span style="color:var(--muted);font-weight:400">・出欠非表示</span>'}</div><div class="chips">${g.list.map(s=>`<span class="chip" style="padding-right:13px">${esc(s.name)}</span>`).join('')||'<span class="empty">なし</span>'}</div></div>`).join('')
     : `<div class="empty" style="margin-top:12px">受講生カルテに受講生が登録されると、ここに表示されます。</div>`;
+  const termToggles=studentsByTerm().length
+    ? `<div class="chips">${studentsByTerm().map(g=>`<label class="chip" style="cursor:pointer;gap:7px;padding-left:11px"><input type="checkbox" ${activeTerms.includes(g.term.id)?'checked':''} onchange="toggleActiveTerm('${g.term.id}')" style="width:16px;height:16px;accent-color:var(--aqua)"> ${esc(g.term.name)}（${g.list.length}）</label>`).join('')}</div>`
+    : `<div class="empty">受講生カルテに期が登録されると、ここで選べます。</div>`;
   view.innerHTML=`
     <div class="card">
       <h2><span class="n">1</span>出欠状況一覧<button class="btn ghost sm" style="margin-left:auto" onclick="exportAttendanceCsv()">📄 CSVで書き出す</button></h2>
@@ -223,12 +233,17 @@ function renderAdmin(){
       <div id="grid" class="loading">集計中…</div>
     </div>
     <div class="card">
-      <h2><span class="n">2</span>受講生一覧（期ごと）</h2>
+      <h2><span class="n">2</span>出欠に表示する期</h2>
+      <p class="hint">チェックした期だけを、出欠フォームの名前選択・集計表・CSVに表示します。<b>すべて未チェックなら全期を表示</b>します（過去生の期を外すと、フォームがすっきりします）。</p>
+      ${termToggles}
+    </div>
+    <div class="card">
+      <h2><span class="n">3</span>受講生一覧（期ごと）</h2>
       <p class="hint">受講生の登録は<b>受講生カルテ</b>で行います。ここではカルテに登録された名簿をそのまま読み込んで表示します（二重登録は不要）。</p>
       ${rosterGrouped}
     </div>
     <div class="card">
-      <h2><span class="n">3</span>講義日</h2>
+      <h2><span class="n">4</span>講義日</h2>
       <p class="hint">日付と、任意で回のテーマ（例：第1回 腸活の基本）を登録します。</p>
       <div class="row"><input type="date" id="lecDate" style="flex:0 0 170px"><input type="text" id="lecLabel" placeholder="回・テーマ（任意）" class="grow"><button class="btn sm" onclick="addLecture()">追加</button></div>
       ${lecChips}
@@ -250,14 +265,14 @@ async function delLecture(id){ lectures=lectures.filter(l=>l.id!==id); try{ awai
 
 function buildGrid(){
   const el=document.getElementById('grid'); if(!el) return;
-  if(!allStudents().length){ el.innerHTML=`<div class="empty">受講生カルテに受講生が登録されると、ここに一覧が表示されます。</div>`; return; }
+  if(!activeStudents().length){ el.innerHTML=`<div class="empty">表示する期の受講生がいません。上の「出欠に表示する期」を確認してください。</div>`; return; }
   const lecs=sortedLectures();
   if(!lecs.length){
-    const rows=allStudents().map(s=>`<tr><th>${esc(s.name)}</th></tr>`).join('');
+    const rows=activeStudents().map(s=>`<tr><th>${esc(s.name)}</th></tr>`).join('');
     el.innerHTML=`<div class="tablewrap"><table><thead><tr><th>受講生</th></tr></thead><tbody>${rows}</tbody></table></div><div class="empty" style="margin-top:8px">講義日を登録すると出欠列が追加されます。</div>`; return;
   }
   const head='<tr><th>受講生 ＼ 講義日</th>'+lecs.map(l=>`<th>${fmtDate(l.date)}${l.label?'<br><span style="font-weight:400;font-size:11px">'+esc(l.label)+'</span>':''}</th>`).join('')+'</tr>';
-  const body=studentsByTerm().map(g=>{
+  const body=activeGroups().map(g=>{
     const gh=`<tr><th colspan="${lecs.length+1}" style="text-align:left;background:var(--aqua-soft);color:var(--aqua-deep)">${esc(g.term.name)}（${g.list.length}名）</th></tr>`;
     const rows=g.list.map(s=>{
       const a=loadAtt(s.id);
@@ -269,20 +284,20 @@ function buildGrid(){
     }).join('');
     return gh+rows;
   }).join('');
-  let present=0,absent=0; const total=allStudents().length*lecs.length;
-  for(const s of allStudents()){ const a=loadAtt(s.id); for(const l of lecs){ if(a[l.id]==='present')present++; else if(a[l.id]==='absent')absent++; } }
+  let present=0,absent=0; const total=activeStudents().length*lecs.length;
+  for(const s of activeStudents()){ const a=loadAtt(s.id); for(const l of lecs){ if(a[l.id]==='present')present++; else if(a[l.id]==='absent')absent++; } }
   el.innerHTML=`<div class="tablewrap"><table><thead>${head}</thead><tbody>${body}</tbody></table></div>
     <div class="stat"><div>出席 <span>${present}</span></div><div>欠席 <span>${absent}</span></div><div>未送信 <span>${total-present-absent}</span></div></div>`;
 }
 /* ===== 受講生カルテ向け CSV 書き出し ===== */
 function csvCell(s){ s=(s==null?'':String(s)); return /[",\n\r]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; }
 function exportAttendanceCsv(){
-  if(!allStudents().length){ toast('受講生が登録されていません'); return; }
+  if(!activeStudents().length){ toast('表示する期の受講生がいません'); return; }
   const lecs=sortedLectures();
   // ヘッダー：期・名前＋講義日ごとの列
   const header=['期','名前', ...lecs.map(l=> fmtDate(l.date) + (l.label ? ' '+l.label : ''))];
   const lines=[header.map(csvCell).join(',')];
-  studentsByTerm().forEach(g=>{
+  activeGroups().forEach(g=>{
     g.list.forEach(s=>{
       const a=loadAtt(s.id);
       const cells=[g.term.name, s.name, ...lecs.map(l=>{ const v=a[l.id]; return v==='present'?'○':(v==='absent'?'×':''); })];
