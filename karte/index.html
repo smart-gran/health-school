@@ -1,1 +1,689 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>受講生カルテ｜健康スクール</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --paper:#F5F7F5; --surface:#FFFFFF; --ink:#1F2A2E; --ink-soft:#5B6B6C;
+    --teal:#17998C; --teal-deep:#0F776C; --teal-wash:#E3F1EE;
+    --apricot:#E8935A; --apricot-wash:#FBEDE1; --apricot-ink:#B96A2E;
+    --muted:#94A3A0; --muted-wash:#EAEEEC; --line:#DDE6E3; --danger:#C4574E;
+    --radius:14px; --shadow:0 1px 2px rgba(31,42,46,.05),0 6px 20px rgba(31,42,46,.06);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic","YuGothic",Meiryo,system-ui,sans-serif;
+    background:var(--paper); color:var(--ink); -webkit-font-smoothing:antialiased; line-height:1.6;}
+  button{font-family:inherit; cursor:pointer}
+  input,textarea,select{font-family:inherit; font-size:15px}
+  a{color:var(--teal-deep)}
 
+  .topbar{position:sticky; top:0; z-index:20; background:rgba(245,247,245,.86); backdrop-filter:blur(8px); border-bottom:1px solid var(--line); padding:14px 20px;}
+  .topbar-inner{max-width:960px; margin:0 auto; display:flex; align-items:center; gap:16px; flex-wrap:wrap}
+  .brand{display:flex; align-items:baseline; gap:10px; cursor:pointer; user-select:none}
+  .brand .mark{font-size:13px; letter-spacing:.18em; color:var(--teal); font-weight:700; border:1.5px solid var(--teal); border-radius:7px; padding:3px 8px;}
+  .brand h1{font-size:17px; margin:0; font-weight:700; letter-spacing:.02em}
+  .search{margin-left:auto; flex:1 1 240px; max-width:360px; position:relative;}
+  .search input{width:100%; padding:9px 14px 9px 36px; border:1px solid var(--line); border-radius:999px; background:var(--surface); outline:none; color:var(--ink);}
+  .search input:focus{border-color:var(--teal); box-shadow:0 0 0 3px var(--teal-wash)}
+  .search svg{position:absolute; left:12px; top:50%; transform:translateY(-50%); opacity:.5}
+
+  .wrap{max-width:960px; margin:0 auto; padding:24px 20px 80px}
+  .row{display:flex; gap:12px; align-items:center; flex-wrap:wrap}
+  .spacer{flex:1}
+  .crumbs{font-size:13px; color:var(--ink-soft); margin-bottom:14px}
+  .crumbs a{cursor:pointer; text-decoration:none}
+  .crumbs a:hover{text-decoration:underline}
+  .crumbs .sep{margin:0 7px; opacity:.5}
+  h2.view-title{font-size:22px; margin:2px 0 18px; letter-spacing:.01em}
+  .sub{color:var(--ink-soft); font-size:14px}
+
+  .btn{border:1px solid var(--line); background:var(--surface); color:var(--ink); padding:9px 15px; border-radius:10px; font-size:14px; font-weight:600; transition:.12s; display:inline-flex; align-items:center; gap:7px;}
+  .btn:hover{border-color:var(--teal); color:var(--teal-deep)}
+  .btn.primary{background:var(--teal); border-color:var(--teal); color:#fff}
+  .btn.primary:hover{background:var(--teal-deep); color:#fff}
+  .btn.apricot{background:var(--apricot); border-color:var(--apricot); color:#fff}
+  .btn.apricot:hover{filter:brightness(.95); color:#fff}
+  .btn.ghost{border-color:transparent; background:transparent; color:var(--ink-soft)}
+  .btn.ghost:hover{background:var(--muted-wash); color:var(--ink)}
+  .btn.small{padding:6px 11px; font-size:13px; border-radius:8px}
+  .btn.danger{color:var(--danger)}
+  .btn.danger:hover{border-color:var(--danger); color:var(--danger); background:#fbf1f0}
+
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow)}
+  .grid{display:grid; gap:14px}
+  .grid.terms{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+
+  .home-sec{margin-bottom:28px}
+  .sec-head{display:flex; align-items:center; gap:10px; margin:0 2px 12px}
+  .sec-head h3{margin:0; font-size:15px; letter-spacing:.04em}
+  .sec-head .tag{font-size:12px; color:var(--ink-soft)}
+
+  .term-card{padding:18px; cursor:pointer; transition:.14s; position:relative}
+  .term-card:hover{transform:translateY(-2px); border-color:var(--teal)}
+  .term-card.camp:hover{border-color:var(--apricot)}
+  .term-card .tname{font-size:18px; font-weight:700}
+  .term-card .tcount{color:var(--ink-soft); font-size:13px; margin-top:6px}
+  .term-card .tafter{margin-top:10px}
+  .term-card .corner{position:absolute; top:14px; right:14px; font-size:11px; font-weight:700; letter-spacing:.08em; color:var(--apricot-ink); background:var(--apricot-wash); padding:2px 8px; border-radius:999px}
+
+  .pill{display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:700; padding:3px 10px; border-radius:999px; letter-spacing:.02em; white-space:nowrap}
+  .pill.enroll,.pill.re{background:var(--teal-wash); color:var(--teal-deep)}
+  .pill.left{background:var(--muted-wash); color:var(--muted)}
+  .pill.after{background:var(--apricot-wash); color:var(--apricot-ink)}
+  .pill.camp{background:var(--apricot-wash); color:var(--apricot-ink)}
+  .pill .dot{width:7px; height:7px; border-radius:50%; background:currentColor}
+
+  .list{display:flex; flex-direction:column}
+  .st-row{display:flex; align-items:center; gap:14px; padding:14px 18px; border-bottom:1px solid var(--line); cursor:pointer; transition:.1s}
+  .st-row:last-child{border-bottom:none}
+  .st-row:hover{background:var(--teal-wash)}
+  .st-main{min-width:0; flex:1}
+  .st-name{font-weight:700; font-size:16px}
+  .st-meta{font-size:12.5px; color:var(--ink-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .st-badges{display:flex; gap:6px; flex-shrink:0; flex-wrap:wrap; justify-content:flex-end}
+  .chev{opacity:.35; flex-shrink:0}
+
+  .field{margin-bottom:14px}
+  .field label{display:block; font-size:13px; font-weight:700; color:var(--ink-soft); margin-bottom:6px}
+  .field input, .field textarea, .field select{width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--surface); color:var(--ink); outline:none;}
+  .field input:focus, .field textarea:focus, .field select:focus{border-color:var(--teal); box-shadow:0 0 0 3px var(--teal-wash)}
+  .field textarea{resize:vertical; min-height:70px}
+  .hint{font-size:12px; color:var(--ink-soft); margin-top:5px}
+
+  .karte-head{display:flex; align-items:flex-start; gap:16px; flex-wrap:wrap; margin-bottom:18px}
+  .karte-head .kname{font-size:26px; font-weight:700; line-height:1.2}
+  .karte-head .kbadges{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px}
+  .section{padding:18px 20px}
+  .section + .section{border-top:1px solid var(--line)}
+  .section h3{margin:0 0 12px; font-size:14px; letter-spacing:.03em; color:var(--teal-deep); font-weight:700; display:flex; align-items:center; gap:9px}
+  .section h3 .edit{margin-left:auto; font-size:12px}
+  .kv{display:grid; grid-template-columns:96px 1fr; gap:8px 14px; font-size:15px}
+  .kv .k{color:var(--ink-soft); font-size:13px; padding-top:9px}
+
+  /* full-width tall memo */
+  .memo-area{width:100%; min-height:200px; padding:12px 14px; border:1px solid var(--line); border-radius:12px; background:var(--surface); color:var(--ink); outline:none; resize:vertical; line-height:1.7; font-size:15px}
+  .memo-area:focus{border-color:var(--teal); box-shadow:0 0 0 3px var(--teal-wash)}
+
+  .checkline{display:flex; align-items:center; gap:11px; padding:12px 14px; border:1px solid var(--line); border-radius:12px; background:var(--paper)}
+  .checkline.on{background:var(--apricot-wash); border-color:#F0C89E}
+  .checkline input{width:20px; height:20px; accent-color:var(--apricot)}
+  .checkline .ctxt{font-weight:700}
+  .checkline .csub{font-size:12.5px; color:var(--ink-soft)}
+
+  /* attendance */
+  .att-summary{font-size:15px; font-weight:700; margin-bottom:10px}
+  .att-summary .rate{color:var(--teal-deep)}
+  .att-grid{display:flex; flex-wrap:wrap; gap:6px}
+  .att-chip{font-size:12.5px; padding:4px 10px; border-radius:8px; border:1px solid var(--line); font-variant-numeric:tabular-nums; white-space:nowrap}
+  .att-chip.present{background:var(--teal-wash); color:var(--teal-deep); border-color:transparent}
+  .att-chip.absent{background:var(--muted-wash); color:var(--muted); border-color:transparent}
+
+  /* camps in karte */
+  .camp-tags{display:flex; flex-wrap:wrap; gap:8px}
+
+  .timeline{list-style:none; margin:0; padding:0}
+  .tl-item{position:relative; padding:0 0 16px 26px; border-left:2px solid var(--line); margin-left:5px}
+  .tl-item:last-child{border-left-color:transparent; padding-bottom:0}
+  .tl-item .tl-dot{position:absolute; left:-7px; top:3px; width:12px; height:12px; border-radius:50%; border:2px solid #fff; background:var(--teal)}
+  .tl-item.left .tl-dot{background:var(--muted)}
+  .tl-item .tl-top{display:flex; align-items:center; gap:9px; flex-wrap:wrap}
+  .tl-date{font-size:12.5px; color:var(--ink-soft); font-variant-numeric:tabular-nums}
+  .tl-type{font-size:13px; font-weight:700}
+  .tl-note{font-size:14px; margin-top:3px; color:var(--ink); white-space:pre-wrap}
+  .tl-del{margin-left:auto; opacity:0; transition:.1s}
+  .tl-item:hover .tl-del{opacity:.6}
+  .tl-del:hover{opacity:1}
+
+  .logform{display:grid; grid-template-columns:auto auto 1fr auto; gap:8px; align-items:end; margin-top:14px}
+  .logform .field{margin:0}
+  @media(max-width:640px){ .logform{grid-template-columns:1fr 1fr} .logform .note-f{grid-column:1/-1} .logform .add-f{grid-column:1/-1} }
+
+  .empty{text-align:center; padding:44px 20px; color:var(--ink-soft)}
+  .empty .big{font-size:16px; color:var(--ink); font-weight:700; margin-bottom:6px}
+
+  .overlay{position:fixed; inset:0; background:rgba(31,42,46,.4); display:flex; align-items:center; justify-content:center; padding:20px; z-index:40}
+  .modal{background:var(--surface); border-radius:16px; max-width:480px; width:100%; padding:22px; box-shadow:0 20px 60px rgba(0,0,0,.25); max-height:88vh; overflow:auto}
+  .modal h3{margin:0 0 4px; font-size:18px}
+  .modal .mdesc{color:var(--ink-soft); font-size:13.5px; margin-bottom:16px}
+  .checklist{display:flex; flex-direction:column; gap:8px; margin-bottom:16px}
+  .checklist label{display:flex; align-items:center; gap:10px; padding:9px 12px; border:1px solid var(--line); border-radius:10px; cursor:pointer}
+  .checklist input{width:18px; height:18px; accent-color:var(--apricot)}
+
+  .toast{position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--ink); color:#fff; padding:11px 20px; border-radius:999px; font-size:14px; font-weight:600; opacity:0; transition:.25s; z-index:60; pointer-events:none}
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+  .toolbar{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:16px}
+  @media (prefers-reduced-motion: reduce){ *{transition:none!important} }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <div class="brand" onclick="go('home')">
+        <span class="mark">KARTE</span><h1>受講生カルテ</h1>
+      </div>
+      <div class="search">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="searchInput" type="search" placeholder="名前・メールで検索" autocomplete="off">
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap" id="app"><div class="card empty">読み込み中…</div></div>
+  <div id="modalRoot"></div>
+  <div class="toast" id="toast"></div>
+
+<script>
+/* ============ Firebase（健康スクールと同じプロジェクト／別コレクション karte_app） ============ */
+const firebaseConfig = {
+  apiKey: "AIzaSyDfZ2SFmj2arUWoOFvw0jyn_1_ben-pfO0",
+  authDomain: "health-school-9d414.firebaseapp.com",
+  projectId: "health-school-9d414",
+  storageBucket: "health-school-9d414.firebasestorage.app",
+  messagingSenderId: "1090225614999",
+  appId: "1:1090225614999:web:2b087b4d5e0add606279d2"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const DOC = db.collection('karte_app').doc('data'); // { terms:[], camps:[], students:[] }
+const AROSTER = db.collection('lecture_app').doc('roster'); // 出欠アプリ：{ lectures:[{id,date,label}] } 講義日（出欠アプリが所有）
+const CATT = db.collection('lecture_att');                  // 出欠：doc(受講生ID) = { marks:{ lectureId:'present'|'absent' } }（IDはカルテと共通）
+let attLectures = [];                                       // 出欠アプリの講義日（自動反映用）
+let attMarks = {};                                          // { 受講生ID: { lectureId:'present'|'absent' } }
+function normalize(d){
+  d = d||{}; d.terms=d.terms||[]; d.camps=d.camps||[]; d.students=d.students||[];
+  d.students.forEach(s=>{ s.log=s.log||[]; s.camps=s.camps||[]; });
+  return d;
+}
+
+/* ============ state ============ */
+let DATA = normalize({});
+let view = { name:'home', termId:null, campId:null, studentId:null };
+let query = '';
+
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id'+Date.now()+Math.random().toString(16).slice(2));
+const esc = s => (s??'').toString().replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const today = () => { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+async function persist(){
+  try{ await DOC.set(DATA); }
+  catch(e){ console.error(e); toast('保存に失敗しました（通信をご確認ください）'); }
+}
+
+/* ============ derived ============ */
+function termById(id){ return DATA.terms.find(t=>t.id===id); }
+function campById(id){ return DATA.camps.find(c=>c.id===id); }
+function studentById(id){ return DATA.students.find(s=>s.id===id); }
+function studentsOf(termId){ return DATA.students.filter(s=>s.termId===termId); }
+function campMembers(campId){ return DATA.students.filter(s=>(s.camps||[]).includes(campId)); }
+function afterStudents(){ return DATA.students.filter(s=>s.isAfter); }
+
+function statusOf(s){
+  const log=(s.log||[]).slice().sort(sortLog); const last=log[log.length-1];
+  if(!last) return {key:'enroll', label:'在籍中'};
+  if(last.type==='退会') return {key:'left', label:'退会'};
+  if(last.type==='再入会') return {key:'re', label:'在籍中（再入会）'};
+  return {key:'enroll', label:'在籍中'};
+}
+function sortLog(a,b){ if(a.date!==b.date) return a.date<b.date?-1:1; return (a.seq||0)-(b.seq||0); }
+function statusPill(s){ const st=statusOf(s); return `<span class="pill ${st.key}"><span class="dot"></span>${st.label}</span>`; }
+function afterPill(){ return `<span class="pill after">アフター生</span>`; }
+/* ---- 出欠アプリからの自動反映 ---- */
+function fmtDateJP(d){ if(!d) return ''; const p=d.split('-'); const wd=['日','月','火','水','木','金','土'][new Date(d+'T00:00:00').getDay()]; return `${Number(p[1])}月${Number(p[2])}日(${wd})`; }
+function sortedAttLectures(){ return [...(attLectures||[])].sort((a,b)=>(a.date||'').localeCompare(b.date||'')); }
+// カルテの受講生の出欠を [{label,status}] で返す（保存せず毎回ライブ計算）
+// 出欠アプリはカルテと同じ名簿・同じ受講生IDを使うため、IDで直結（名前照合は不要）
+function getAtt(k){
+  const marks=attMarks[k.id]||{}; const out=[];
+  sortedAttLectures().forEach(l=>{ const v=marks[l.id]; if(v==='present'||v==='absent') out.push({label:fmtDateJP(l.date)+(l.label?' '+l.label:''), status:v}); });
+  return out;
+}
+function attSummary(s){
+  const att=getAtt(s); if(!att.length) return null;
+  const p=att.filter(a=>a.status==='present').length; return {present:p, total:att.length};
+}
+
+/* matching (email優先→名前) */
+function matchStudents(name, email){
+  name=(name||'').trim(); email=(email||'').trim().toLowerCase();
+  return DATA.students.filter(s=>{
+    if(email && (s.email||'').trim().toLowerCase()===email) return true;
+    if(name && (s.name||'').trim()===name) return true;
+    return false;
+  });
+}
+
+/* ============ router ============ */
+function go(name, opts={}){ view={name, termId:opts.termId??null, campId:opts.campId??null, studentId:opts.studentId??null}; window.scrollTo(0,0); render(); }
+
+/* ============ render ============ */
+function render(){
+  const app=document.getElementById('app');
+  if(query){ app.innerHTML=renderSearch(); return; }
+  if(view.name==='home') app.innerHTML=renderHome();
+  else if(view.name==='term') app.innerHTML=renderTerm();
+  else if(view.name==='camp') app.innerHTML=renderCamp();
+  else if(view.name==='student') app.innerHTML=renderStudent();
+  else if(view.name==='after') app.innerHTML=renderAfter();
+}
+
+function renderHome(){
+  const afterCount=afterStudents().length;
+  const termCards=DATA.terms.map(t=>{
+    const list=studentsOf(t.id); const aft=list.filter(s=>s.isAfter).length;
+    return `<div class="card term-card" onclick="go('term',{termId:'${t.id}'})">
+      <div class="tname">${esc(t.name)}</div>
+      <div class="tcount">受講生 ${list.length}名</div>
+      ${aft?`<div class="tafter">${afterPill()} ${aft}名</div>`:''}
+    </div>`;
+  }).join('');
+  const campCards=DATA.camps.map(c=>{
+    const n=campMembers(c.id).length;
+    return `<div class="card term-card camp" onclick="go('camp',{campId:'${c.id}'})">
+      <div class="corner">合宿</div>
+      <div class="tname">${esc(c.name)}</div>
+      <div class="tcount">参加 ${n}名</div>
+    </div>`;
+  }).join('');
+
+  return `
+    <div class="toolbar">
+      <h2 class="view-title" style="margin:0">ホーム</h2>
+      <div class="spacer"></div>
+      <button class="btn" onclick="go('after')">アフター生一覧 ${afterCount?`(${afterCount})`:''}</button>
+      <button class="btn ghost small" onclick="openBackup()">バックアップ</button>
+    </div>
+
+    <div class="home-sec">
+      <div class="sec-head"><h3>期</h3><span class="tag">受講生の登録単位</span>
+        <div class="spacer"></div>
+        <button class="btn primary small" onclick="openAddTerm()">＋ 期を追加</button>
+      </div>
+      ${DATA.terms.length?`<div class="grid terms">${termCards}</div>`:
+        `<div class="card empty"><div class="big">まだ期がありません</div>「＋ 期を追加」から最初の期（例：1期）を作成してください。</div>`}
+    </div>
+
+    <div class="home-sec">
+      <div class="sec-head"><h3>合宿</h3><span class="tag">既存の受講生カルテに参加を記録</span>
+        <div class="spacer"></div>
+        <button class="btn apricot small" onclick="openAddCamp()">＋ 合宿を追加</button>
+      </div>
+      ${DATA.camps.length?`<div class="grid terms">${campCards}</div>`:
+        `<div class="card empty"><div class="big">合宿はまだありません</div>「＋ 合宿を追加」で作成し（例：26年10月合宿（京都））、参加者名簿をCSVで取り込むと、既存カルテに参加が表示されます。</div>`}
+    </div>
+  `;
+}
+
+function renderTerm(){
+  const t=termById(view.termId); if(!t) return renderHome();
+  const list=studentsOf(t.id); const rows=list.map(s=>rowHTML(s)).join('');
+  return `
+    <div class="crumbs"><a onclick="go('home')">ホーム</a><span class="sep">›</span>${esc(t.name)}</div>
+    <div class="toolbar">
+      <h2 class="view-title" style="margin:0">${esc(t.name)}<span class="sub" style="font-weight:400; margin-left:10px">${list.length}名</span></h2>
+      <div class="spacer"></div>
+      <button class="btn small" onclick="importFromAttendance('${t.id}')">出欠アプリから取込</button>
+      <button class="btn small" onclick="openCsv('${t.id}')">CSVで一括登録</button>
+      <button class="btn primary small" onclick="openAddStudent('${t.id}')">＋ 受講生を追加</button>
+    </div>
+    ${list.length?`<div class="card list">${rows}</div>`:
+      `<div class="card empty"><div class="big">受講生がいません</div>「＋ 受講生を追加」または「CSVで一括登録」から登録してください。</div>`}
+    <div class="row" style="margin-top:18px"><button class="btn ghost small danger" onclick="deleteTerm('${t.id}')">この期を削除</button></div>
+  `;
+}
+
+function renderCamp(){
+  const c=campById(view.campId); if(!c) return renderHome();
+  const list=campMembers(c.id); const rows=list.map(s=>rowHTML(s,true)).join('');
+  return `
+    <div class="crumbs"><a onclick="go('home')">ホーム</a><span class="sep">›</span>${esc(c.name)}</div>
+    <div class="toolbar">
+      <h2 class="view-title" style="margin:0">${esc(c.name)}<span class="sub" style="font-weight:400; margin-left:10px">参加 ${list.length}名</span></h2>
+      <div class="spacer"></div>
+      <button class="btn apricot small" onclick="openCampCsv('${c.id}')">参加者名簿をCSVで取込</button>
+    </div>
+    <p class="sub" style="margin-top:-6px">CSVで名前をUPすると、その名前・メールに一致する既存の受講生カルテに「${esc(c.name)}参加」が記録されます。</p>
+    ${list.length?`<div class="card list">${rows}</div>`:
+      `<div class="card empty"><div class="big">参加者がいません</div>「参加者名簿をCSVで取込」から登録してください（名前だけでも可）。</div>`}
+    <div class="row" style="margin-top:18px"><button class="btn ghost small danger" onclick="deleteCamp('${c.id}')">この合宿を削除</button></div>
+  `;
+}
+
+function rowHTML(s, showTerm=false){
+  const meta=[];
+  if(showTerm){ const t=termById(s.termId); if(t) meta.push('【'+esc(t.name)+'】'); }
+  if(s.email) meta.push(esc(s.email));
+  if(s.address) meta.push(esc(s.address));
+  const asum=attSummary(s);
+  const badges=[];
+  if(asum) badges.push(`<span class="pill enroll"><span class="dot"></span>出席${asum.present}/${asum.total}</span>`);
+  if(s.isAfter) badges.push(afterPill());
+  badges.push(statusPill(s));
+  return `<div class="st-row" onclick="go('student',{studentId:'${s.id}'})">
+    <div class="st-main">
+      <div class="st-name">${esc(s.name)}</div>
+      <div class="st-meta">${meta.join(' ・ ') || '<span style="opacity:.5">連絡先未登録</span>'}</div>
+    </div>
+    <div class="st-badges">${badges.join('')}</div>
+    <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+  </div>`;
+}
+
+function renderStudent(){
+  const s=studentById(view.studentId); if(!s) return renderHome();
+  const t=termById(s.termId);
+  const log=(s.log||[]).slice().sort(sortLog);
+  const asum=attSummary(s);
+
+  // attendance section（出欠アプリからライブ反映）
+  let attHTML;
+  if(asum){
+    const chips=getAtt(s).map(a=>`<span class="att-chip ${a.status}">${esc(a.label)} ${a.status==='present'?'○':'×'}</span>`).join('');
+    const rate=asum.total?Math.round(asum.present/asum.total*100):0;
+    attHTML=`<div class="att-summary">出席 <span class="rate">${asum.present} / ${asum.total} 回</span>（${rate}%）</div><div class="att-grid">${chips}</div>`;
+  }else{
+    attHTML=`<p class="sub">出欠アプリ（カルテと共通の名簿）で出欠が送信されると、ここに講義ごとの ○／× が自動で表示されます。</p>`;
+  }
+
+  // camps
+  const myCamps=DATA.camps.filter(c=>(s.camps||[]).includes(c.id));
+  const campHTML = myCamps.length
+    ? `<div class="camp-tags">${myCamps.map(c=>`<span class="pill camp">${esc(c.name)}参加</span>`).join('')}</div>`
+    : `<p class="sub">参加している合宿はありません。</p>`;
+
+  // timeline
+  const tl=log.map(e=>{
+    const cls=e.type==='退会'?'left':'';
+    return `<li class="tl-item ${cls}"><span class="tl-dot"></span>
+      <div class="tl-top"><span class="tl-date">${esc(e.date||'')}</span><span class="tl-type">${esc(e.type)}</span>
+      <button class="btn ghost small tl-del" onclick="deleteLog('${s.id}','${e.id}')">削除</button></div>
+      ${e.note?`<div class="tl-note">${esc(e.note)}</div>`:''}</li>`;
+  }).join('');
+
+  return `
+    <div class="crumbs">
+      <a onclick="go('home')">ホーム</a><span class="sep">›</span>
+      <a onclick="go('term',{termId:'${t?t.id:''}'})">${esc(t?t.name:'—')}</a><span class="sep">›</span>${esc(s.name)}
+    </div>
+
+    <div class="karte-head">
+      <div style="min-width:0">
+        <div class="kname">${esc(s.name)}</div>
+        <div class="kbadges">${statusPill(s)}${asum?`<span class="pill enroll"><span class="dot"></span>出席${asum.present}/${asum.total}</span>`:''}${s.isAfter?afterPill():''}<span class="pill" style="background:var(--muted-wash);color:var(--ink-soft)">${esc(t?t.name:'')}</span></div>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn ghost small danger" onclick="deleteStudent('${s.id}')">削除</button>
+    </div>
+
+    <div class="card">
+      <div class="section">
+        <h3>基本情報</h3>
+        <div class="kv">
+          <div class="k">名前</div><div><input id="f_name" value="${esc(s.name)}" onchange="updField('${s.id}','name',this.value)"></div>
+          <div class="k">メール</div><div><input id="f_email" value="${esc(s.email||'')}" placeholder="未登録" onchange="updField('${s.id}','email',this.value)"></div>
+          <div class="k">住所</div><div><input id="f_addr" value="${esc(s.address||'')}" placeholder="未登録" onchange="updField('${s.id}','address',this.value)"></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>出欠状況（講義）</h3>
+        ${attHTML}
+      </div>
+
+      <div class="section">
+        <h3>合宿<button class="btn ghost small edit" onclick="editCamps('${s.id}')">編集</button></h3>
+        ${campHTML}
+      </div>
+
+      <div class="section">
+        <h3>アフター生</h3>
+        <label class="checkline ${s.isAfter?'on':''}" id="afterLine">
+          <input type="checkbox" ${s.isAfter?'checked':''} onchange="toggleAfter('${s.id}',this.checked)">
+          <span><span class="ctxt">アフター生として登録する</span><br><span class="csub">チェックすると「アフター生一覧」にも表示されます。</span></span>
+        </label>
+      </div>
+
+      <div class="section">
+        <h3>アフター参加記録</h3>
+        <p class="sub" style="margin-top:-4px">退会・再入会などをここに記録すると、上の状態バッジと下の履歴に反映されます。</p>
+        ${log.length?`<ul class="timeline">${tl}</ul>`:`<p class="sub">まだ記録がありません。</p>`}
+        <div class="logform">
+          <div class="field add-date"><label>日付</label><input type="date" id="log_date" value="${today()}"></div>
+          <div class="field"><label>種別</label><select id="log_type"><option>入会</option><option>退会</option><option>再入会</option><option>その他</option></select></div>
+          <div class="field note-f"><label>メモ（任意）</label><input id="log_note" placeholder="例：〇月に退会、△月に再入会"></div>
+          <div class="field add-f"><label>&nbsp;</label><button class="btn primary" onclick="addLog('${s.id}')">記録を追加</button></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>備考</h3>
+        <textarea id="f_memo" class="memo-area" placeholder="自由記入欄" onchange="updField('${s.id}','memo',this.value)">${esc(s.memo||'')}</textarea>
+      </div>
+    </div>
+  `;
+}
+
+function renderAfter(){
+  const list=afterStudents(); const rows=list.map(s=>rowHTML(s,true)).join('');
+  return `
+    <div class="crumbs"><a onclick="go('home')">ホーム</a><span class="sep">›</span>アフター生一覧</div>
+    <h2 class="view-title">アフター生一覧 <span class="sub" style="font-weight:400">${list.length}名</span></h2>
+    ${list.length?`<div class="card list">${rows}</div>`:
+      `<div class="card empty"><div class="big">アフター生がいません</div>各受講生のカルテで「アフター生」にチェックすると、ここに表示されます。</div>`}
+  `;
+}
+
+function renderSearch(){
+  const q=query.toLowerCase();
+  const hits=DATA.students.filter(s=>(s.name||'').toLowerCase().includes(q)||(s.email||'').toLowerCase().includes(q));
+  const rows=hits.map(s=>rowHTML(s,true)).join('');
+  return `
+    <h2 class="view-title">「${esc(query)}」の検索結果 <span class="sub" style="font-weight:400">${hits.length}件</span></h2>
+    ${hits.length?`<div class="card list">${rows}</div>`:
+      `<div class="card empty"><div class="big">見つかりませんでした</div>名前またはメールアドレスの一部で検索できます。</div>`}
+  `;
+}
+
+/* ============ mutations ============ */
+async function updField(id,key,val){ const s=studentById(id); if(!s) return; s[key]=val.trim(); await persist(); if(key==='name') render(); toast('保存しました'); }
+async function toggleAfter(id,on){ const s=studentById(id); if(!s) return; s.isAfter=on; await persist(); render(); toast(on?'アフター生に登録しました':'アフター生を解除しました'); }
+async function addLog(id){ const s=studentById(id); if(!s) return;
+  const date=document.getElementById('log_date').value||today(); const type=document.getElementById('log_type').value; const note=document.getElementById('log_note').value.trim();
+  s.log=s.log||[]; s.log.push({id:uid(),date,type,note,seq:s.log.length}); await persist(); render(); toast('記録を追加しました'); }
+async function deleteLog(sid,lid){ const s=studentById(sid); if(!s) return; s.log=(s.log||[]).filter(e=>e.id!==lid); await persist(); render(); }
+
+async function deleteStudent(id){ const s=studentById(id); if(!s) return;
+  confirmDialog('受講生を削除',`「${esc(s.name)}」のカルテを削除します。元に戻せません。`,async()=>{ const tid=s.termId; DATA.students=DATA.students.filter(x=>x.id!==id); await persist(); go('term',{termId:tid}); }); }
+async function deleteTerm(id){ const t=termById(id); const n=studentsOf(id).length;
+  confirmDialog('期を削除',`「${esc(t.name)}」と受講生${n}名のカルテを削除します。元に戻せません。`,async()=>{ DATA.terms=DATA.terms.filter(x=>x.id!==id); DATA.students=DATA.students.filter(s=>s.termId!==id); await persist(); go('home'); }); }
+async function deleteCamp(id){ const c=campById(id);
+  confirmDialog('合宿を削除',`「${esc(c.name)}」を削除します。各カルテの参加記録からも外れます（受講生カルテ自体は残ります）。`,async()=>{ DATA.camps=DATA.camps.filter(x=>x.id!==id); DATA.students.forEach(s=>{ s.camps=(s.camps||[]).filter(cid=>cid!==id); }); await persist(); go('home'); }); }
+
+/* ============ modals ============ */
+function openModal(html){ document.getElementById('modalRoot').innerHTML=`<div class="overlay" onclick="if(event.target===this)closeModal()">${html}</div>`; }
+function closeModal(){ document.getElementById('modalRoot').innerHTML=''; }
+function resultModal(title, body){ openModal(`<div class="modal"><h3>${title}</h3><div class="mdesc" style="white-space:pre-wrap">${body}</div><div class="row"><div class="spacer"></div><button class="btn primary" onclick="closeModal()">OK</button></div></div>`); }
+
+function openAddTerm(){
+  const suggest=(DATA.terms.length+1)+'期';
+  openModal(`<div class="modal"><h3>期を追加</h3><p class="mdesc">期の名前を入力してください（例：1期、2024春期 など）。</p>
+    <div class="field"><input id="m_term" value="${esc(suggest)}" placeholder="○期"></div>
+    <div class="row"><div class="spacer"></div><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn primary" onclick="submitTerm()">追加</button></div></div>`);
+  setTimeout(()=>{const el=document.getElementById('m_term'); el.focus(); el.select();},30);
+}
+async function submitTerm(){ const name=document.getElementById('m_term').value.trim(); if(!name){toast('名前を入力してください');return;} const t={id:uid(),name}; DATA.terms.push(t); await persist(); closeModal(); go('term',{termId:t.id}); }
+
+function openAddCamp(){
+  openModal(`<div class="modal"><h3>合宿を追加</h3><p class="mdesc">合宿の名前を入力してください（例：26年10月合宿（京都））。</p>
+    <div class="field"><input id="m_camp" placeholder="26年10月合宿（京都）"></div>
+    <div class="row"><div class="spacer"></div><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn apricot" onclick="submitCamp()">追加</button></div></div>`);
+  setTimeout(()=>document.getElementById('m_camp').focus(),30);
+}
+async function submitCamp(){ const name=document.getElementById('m_camp').value.trim(); if(!name){toast('名前を入力してください');return;} const c={id:uid(),name}; DATA.camps.push(c); await persist(); closeModal(); go('camp',{campId:c.id}); }
+
+function openAddStudent(termId){
+  openModal(`<div class="modal"><h3>受講生を追加</h3><p class="mdesc">名前は必須です。メール・住所は未登録でも構いません。</p>
+    <div class="field"><label>名前 <span style="color:var(--danger)">*</span></label><input id="m_name" placeholder="山田 花子"></div>
+    <div class="field"><label>メール</label><input id="m_email" placeholder="任意"></div>
+    <div class="field"><label>住所</label><input id="m_addr" placeholder="任意"></div>
+    <div class="row"><div class="spacer"></div><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn primary" onclick="submitStudent('${termId}')">追加</button></div></div>`);
+  setTimeout(()=>document.getElementById('m_name').focus(),30);
+}
+async function submitStudent(termId){ const name=document.getElementById('m_name').value.trim(); if(!name){toast('名前を入力してください');return;}
+  const s={id:uid(),termId,name,email:document.getElementById('m_email').value.trim(),address:document.getElementById('m_addr').value.trim(),memo:'',isAfter:false,log:[],camps:[],att:[]};
+  DATA.students.push(s); await persist(); closeModal(); render(); toast('追加しました'); }
+
+/* ---- edit camps from karte ---- */
+function editCamps(sid){
+  const s=studentById(sid); if(!s) return;
+  if(!DATA.camps.length){ resultModal('合宿がありません','先にホームの「合宿」で合宿を追加してください。'); return; }
+  const items=DATA.camps.map(c=>`<label><input type="checkbox" value="${c.id}" ${(s.camps||[]).includes(c.id)?'checked':''}> ${esc(c.name)}</label>`).join('');
+  openModal(`<div class="modal"><h3>合宿の参加を編集</h3><p class="mdesc">${esc(s.name)}さんが参加した合宿を選択してください。</p>
+    <div class="checklist" id="campChecks">${items}</div>
+    <div class="row"><div class="spacer"></div><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn primary" onclick="saveCamps('${sid}')">保存</button></div></div>`);
+}
+async function saveCamps(sid){ const s=studentById(sid); if(!s) return;
+  const checks=[...document.querySelectorAll('#campChecks input:checked')].map(i=>i.value);
+  s.camps=checks; await persist(); closeModal(); render(); toast('保存しました'); }
+
+/* ---- CSV: term roster ---- */
+function openCsv(termId){
+  openModal(`<div class="modal"><h3>CSVで一括登録</h3><p class="mdesc">見出し行から「名前・メール・住所・メモ」を自動判別します。個別相談アプリの成約者一覧（名前＋メモ等）もそのまま取り込めます。同じ期に同名がいれば重複はスキップします。</p>
+    <div class="field"><input type="file" id="m_csv" accept=".csv,text/csv"></div>
+    <div class="hint">名前だけの行もOK。見出しがない場合は、1列目=名前・2列目=メール・3列目=住所として読み込みます。個別相談CSVの「メモ」は備考欄に入ります。</div>
+    <div class="row" style="margin-top:16px"><button class="btn ghost small" onclick="downloadTemplate()">テンプレートCSVを保存</button><div class="spacer"></div>
+      <button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn primary" onclick="importCsv('${termId}')">取り込む</button></div></div>`);
+}
+function pickCol(headers, keys){ return headers.findIndex(h=> keys.some(k=> h.replace(/\s/g,'').toLowerCase().includes(k))); }
+function importCsv(termId){
+  const file=document.getElementById('m_csv').files[0]; if(!file){toast('ファイルを選択してください');return;}
+  Papa.parse(file,{skipEmptyLines:true,complete:async(res)=>{
+    let rows=res.data; if(!rows.length){toast('データがありません');return;}
+    const first=rows[0].map(c=>(c||'').toString());
+    const looksHeader=first.some(c=>/名前|氏名|name|メール|mail|住所|address|メモ|備考|memo/i.test(c));
+    let ni=0,ei=1,ai=2,mi=-1;
+    if(looksHeader){
+      ni=pickCol(first,['名前','氏名','name']); if(ni<0)ni=0;
+      ei=pickCol(first,['メール','mail','email']);
+      ai=pickCol(first,['住所','address']);
+      mi=pickCol(first,['メモ','備考','memo']);
+      rows=rows.slice(1);
+    }
+    const existing=new Set(studentsOf(termId).map(s=>(s.name||'').trim()));
+    let added=0, skipped=0, dup=0;
+    rows.forEach(r=>{ const name=(r[ni]||'').toString().trim(); if(!name){skipped++;return;}
+      if(existing.has(name)){ dup++; return; }             // 同じ期に同名が既にいれば重複スキップ
+      const email=ei>=0?(r[ei]||'').toString().trim():'';
+      const address=ai>=0?(r[ai]||'').toString().trim():'';
+      const memo=mi>=0?(r[mi]||'').toString().trim():'';
+      DATA.students.push({id:uid(),termId,name,email,address,memo,isAfter:false,log:[],camps:[]});
+      existing.add(name); added++;
+    });
+    await persist(); closeModal(); render();
+    let msg=`${added}名を登録`; const extra=[]; if(dup)extra.push(`重複${dup}件`); if(skipped)extra.push(`空欄${skipped}行`);
+    if(extra.length)msg+=`（${extra.join('・')}スキップ）`;
+    toast(msg);
+  },error:()=>toast('読み込みに失敗しました')});
+}
+function downloadTemplate(){ dl('受講生テンプレート.csv','名前,メールアドレス,住所,メモ\n山田 花子,hanako@example.com,広島県福山市...,\n田中 太郎,,,体験から継続\n','text/csv'); }
+
+/* ---- 既存の出欠アプリ名簿をIDごと取り込む（記録済みの出欠をそのまま反映）---- */
+async function importFromAttendance(termId){
+  let snap; try{ snap=await AROSTER.get(); }catch(e){ toast('取得に失敗しました'); return; }
+  const d=snap.exists?snap.data():{}; const src=(d&&d.students)||[];
+  if(!src.length){ resultModal('出欠アプリの名簿', '出欠アプリ側に登録済みの受講生が見つかりませんでした。'); return; }
+  const haveIds=new Set(DATA.students.map(s=>s.id));
+  const haveNames=new Set(studentsOf(termId).map(s=>(s.name||'').trim()));
+  let added=0, dup=0;
+  src.forEach(o=>{ const name=(o.name||'').trim(); if(!name) return;
+    if((o.id && haveIds.has(o.id)) || haveNames.has(name)){ dup++; return; }
+    DATA.students.push({id:o.id||uid(), termId, name, email:'', address:'', memo:'', isAfter:false, log:[], camps:[]}); // ★ IDを保持
+    if(o.id) haveIds.add(o.id); haveNames.add(name); added++;
+  });
+  await persist(); render();
+  const tn=(termById(termId)||{}).name||'';
+  resultModal('出欠アプリから取り込みました',
+    `${added}名を「${esc(tn)}」に登録しました${dup?`（重複${dup}件スキップ）`:''}。\n\n出欠アプリで記録済みの出欠は、受講生IDが一致するため各カルテの「出欠状況（講義）」に自動反映されます。`);
+}
+
+/* ---- CSV: camp roster (match existing students) ---- */
+function openCampCsv(campId){
+  openModal(`<div class="modal"><h3>参加者名簿をCSVで取込</h3><p class="mdesc">列は「名前」「メールアドレス」の順（見出し行があれば自動判別）。既存の受講生カルテに名前・メールで照合し、参加を記録します。</p>
+    <div class="field"><input type="file" id="m_ccsv" accept=".csv,text/csv"></div>
+    <div class="hint">一致する受講生がいない名前は「未一致」として一覧表示します（カルテは新規作成しません）。</div>
+    <div class="row" style="margin-top:16px"><div class="spacer"></div><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn apricot" onclick="importCampCsv('${campId}')">取り込む</button></div></div>`);
+}
+function importCampCsv(campId){
+  const file=document.getElementById('m_ccsv').files[0]; if(!file){toast('ファイルを選択してください');return;}
+  Papa.parse(file,{skipEmptyLines:true,complete:async(res)=>{
+    let rows=res.data; if(!rows.length){toast('データがありません');return;}
+    const first=rows[0].map(c=>(c||'').toString());
+    const looksHeader=first.some(c=>/名前|氏名|name|メール|mail/i.test(c));
+    let ni=0,ei=1;
+    if(looksHeader){ ni=pickCol(first,['名前','氏名','name']); if(ni<0)ni=0; ei=pickCol(first,['メール','mail','email']); rows=rows.slice(1); }
+    let matched=0; const unmatched=[];
+    rows.forEach(r=>{ const name=(r[ni]||'').toString().trim(); if(!name) return;
+      const email=ei>=0?(r[ei]||'').toString().trim():'';
+      const hits=matchStudents(name,email);
+      if(hits.length){ hits.forEach(s=>{ s.camps=s.camps||[]; if(!s.camps.includes(campId)) s.camps.push(campId); }); matched++; }
+      else unmatched.push(name);
+    });
+    await persist(); closeModal(); render();
+    let body=`${matched}名を参加として記録しました。`;
+    if(unmatched.length) body+=`\n\n未一致（${unmatched.length}名）：\n${unmatched.join('、')}\n\n※未一致の方は、該当の期でカルテを作成してから再度取り込むか、カルテの「合宿」→編集で個別に追加できます。`;
+    resultModal('合宿参加を取り込みました', body);
+  },error:()=>toast('読み込みに失敗しました')});
+}
+
+/* ---- 出欠はホーム/カルテで出欠アプリから自動反映（CSV取込は廃止） ---- */
+
+/* ---- backup ---- */
+function openBackup(){
+  openModal(`<div class="modal"><h3>バックアップ</h3><p class="mdesc">全データをJSONで保存／復元できます（手動バックアップ用）。復元するとFirestore上のデータを上書きします。</p>
+    <div class="row" style="gap:10px"><button class="btn" onclick="exportJson()">JSONを書き出す</button>
+      <label class="btn" style="cursor:pointer">JSONを読み込む<input type="file" accept=".json,application/json" style="display:none" onchange="importJson(event)"></label></div>
+    <div class="row" style="margin-top:16px"><div class="spacer"></div><button class="btn ghost" onclick="closeModal()">閉じる</button></div></div>`);
+}
+function exportJson(){ dl('受講生カルテ_backup.json', JSON.stringify(DATA,null,2), 'application/json'); }
+function importJson(ev){ const f=ev.target.files[0]; if(!f) return; const r=new FileReader();
+  r.onload=async()=>{ try{ const d=JSON.parse(r.result); if(!d.students) throw 0; DATA=normalize(d); await persist(); closeModal(); go('home'); toast('復元しました'); }catch(e){ toast('ファイルの形式が正しくありません'); } };
+  r.readAsText(f); }
+
+/* ---- confirm ---- */
+let _confirmCb=null;
+function confirmDialog(title,msg,cb){ _confirmCb=cb;
+  openModal(`<div class="modal"><h3>${title}</h3><p class="mdesc">${msg}</p><div class="row"><div class="spacer"></div><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn danger" onclick="runConfirm()">削除する</button></div></div>`); }
+function runConfirm(){ const cb=_confirmCb; closeModal(); if(cb) cb(); }
+
+/* ---- helpers ---- */
+function dl(filename,content,type){ const blob=new Blob([content],{type}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; a.click(); setTimeout(()=>URL.revokeObjectURL(url),500); }
+let _toastT=null;
+function toast(msg){ const el=document.getElementById('toast'); el.textContent=msg; el.classList.add('show'); clearTimeout(_toastT); _toastT=setTimeout(()=>el.classList.remove('show'),1600); }
+
+let _searchT=null;
+document.getElementById('searchInput').addEventListener('input',e=>{ clearTimeout(_searchT); _searchT=setTimeout(()=>{ query=e.target.value.trim(); render(); },160); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeModal(); if(query){ query=''; document.getElementById('searchInput').value=''; render(); } } });
+
+/* ============ boot：Firestore をリアルタイム購読（他端末の変更も自動反映） ============ */
+function safeRender(){
+  const ae=document.activeElement;
+  const editing = ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName);
+  const modalOpen = document.getElementById('modalRoot').children.length>0;
+  if(!editing && !modalOpen) render();   // 入力中・モーダル表示中は操作を妨げないため再描画を保留
+}
+// カルテ本体
+DOC.onSnapshot(snap=>{ DATA = normalize(snap.exists ? snap.data() : {}); safeRender(); }, err=>{
+  console.error(err);
+  document.getElementById('app').innerHTML='<div class="card empty"><div class="big">接続できませんでした</div>通信環境をご確認のうえ、ページを再読み込みしてください。</div>';
+});
+// 出欠アプリの講義日 → 出欠の自動反映に使用
+AROSTER.onSnapshot(snap=>{ const d=snap.exists?snap.data():{}; attLectures=d.lectures||[]; safeRender(); }, ()=>{});
+// 出欠アプリの出欠マーク
+CATT.onSnapshot(snap=>{ attMarks={}; snap.forEach(doc=>{ attMarks[doc.id]=(doc.data()&&doc.data().marks)||{}; }); safeRender(); }, ()=>{});
+</script>
+</body>
+</html>
