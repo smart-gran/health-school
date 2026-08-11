@@ -198,6 +198,11 @@ const AROSTER = db.collection('lecture_app').doc('roster'); // 出欠アプリ�
 const CATT = db.collection('lecture_att');                  // 出欠：doc(受講生ID) = { marks:{ lectureId:'present'|'absent' } }（IDはカルテと共通）
 let attLectures = [];                                       // 出欠アプリの講義日（自動反映用）
 let attMarks = {};                                          // { 受講生ID: { lectureId:'present'|'absent' } }
+// アフター生出欠アプリ（別アプリ）からの自動反映
+const AFTER_ROSTER = db.collection('after_lecture_app').doc('roster'); // { lectures:[{id,date,label}] }
+const AFTER_CATT = db.collection('after_att');                          // doc(受講生ID) = { marks:{ lectureId:'present'|'absent' } }
+let afterLectures = [];
+let afterMarks = {};
 function normalize(d){
   d = d||{}; d.terms=d.terms||[]; d.camps=d.camps||[]; d.students=d.students||[];
   d.students.forEach(s=>{ s.log=s.log||[]; s.camps=s.camps||[]; });
@@ -247,6 +252,16 @@ function getAtt(k){
 }
 function attSummary(s){
   const att=getAtt(s); if(!att.length) return null;
+  const p=att.filter(a=>a.status==='present').length; return {present:p, total:att.length};
+}
+function sortedAfterLectures(){ return [...(afterLectures||[])].sort((a,b)=>(a.date||'').localeCompare(b.date||'')); }
+function getAfterAtt(k){
+  const marks=afterMarks[k.id]||{}; const out=[];
+  sortedAfterLectures().forEach(l=>{ const v=marks[l.id]; if(v==='present'||v==='absent') out.push({label:fmtDateJP(l.date)+(l.label?' '+l.label:''), status:v}); });
+  return out;
+}
+function afterAttSummary(s){
+  const att=getAfterAtt(s); if(!att.length) return null;
   const p=att.filter(a=>a.status==='present').length; return {present:p, total:att.length};
 }
 
@@ -407,6 +422,17 @@ function renderStudent(){
     attHTML=`<p class="sub">出欠アプリ（カルテと共通の名簿）で出欠が送信されると、ここに講義ごとの ○／× が自動で表示されます。</p>`;
   }
 
+  // アフター出欠 section（アフター生出欠アプリからライブ反映）
+  const afsum=afterAttSummary(s);
+  let afterAttHTML;
+  if(afsum){
+    const chips=getAfterAtt(s).map(a=>`<span class="att-chip ${a.status}">${esc(a.label)} ${a.status==='present'?'○':'×'}</span>`).join('');
+    const rate=afsum.total?Math.round(afsum.present/afsum.total*100):0;
+    afterAttHTML=`<div class="att-summary">出席 <span class="rate">${afsum.present} / ${afsum.total} 回</span>（${rate}%）</div><div class="att-grid">${chips}</div>`;
+  }else{
+    afterAttHTML=`<p class="sub">アフター生出欠アプリで出欠が送信されると、ここにアフターの ○／× が自動で表示されます。</p>`;
+  }
+
   // camps
   const campHTML = DATA.camps.length
     ? `<div class="checklist">${DATA.camps.map(c=>`<label><input type="checkbox" ${(s.camps||[]).includes(c.id)?'checked':''} onchange="toggleCamp('${s.id}','${c.id}',this.checked)"> ${esc(c.name)}</label>`).join('')}</div>`
@@ -450,6 +476,11 @@ function renderStudent(){
         <h3>出欠状況（講義）</h3>
         ${attHTML}
       </div>
+
+      ${s.isAfter?`<div class="section">
+        <h3>アフター出欠</h3>
+        ${afterAttHTML}
+      </div>`:''}
 
       <div class="section">
         <h3>アフター生</h3>
@@ -719,6 +750,9 @@ DOC.onSnapshot(snap=>{ DATA = normalize(snap.exists ? snap.data() : {}); safeRen
 AROSTER.onSnapshot(snap=>{ const d=snap.exists?snap.data():{}; attLectures=d.lectures||[]; safeRender(); }, ()=>{});
 // 出欠アプリの出欠マーク
 CATT.onSnapshot(snap=>{ attMarks={}; snap.forEach(doc=>{ attMarks[doc.id]=(doc.data()&&doc.data().marks)||{}; }); safeRender(); }, ()=>{});
+// アフター生出欠アプリの開催日と出欠マーク
+AFTER_ROSTER.onSnapshot(snap=>{ const d=snap.exists?snap.data():{}; afterLectures=d.lectures||[]; safeRender(); }, ()=>{});
+AFTER_CATT.onSnapshot(snap=>{ afterMarks={}; snap.forEach(doc=>{ afterMarks[doc.id]=(doc.data()&&doc.data().marks)||{}; }); safeRender(); }, ()=>{});
 </script>
 </body>
 </html>
