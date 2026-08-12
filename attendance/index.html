@@ -115,6 +115,7 @@ function fmtDate(d){if(!d)return'';const p=d.split('-');const wd=['日','月','�
 function esc(s){return(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function allStudents(){ return kData.students||[]; }
 function sortedLectures(){return[...lectures].sort((a,b)=>(a.date||'').localeCompare(b.date||''));}
+function latestLectures(){ const s=sortedLectures(); return s.length ? [s[s.length-1]] : []; } // 出欠フォームは最新の日程のみ
 function loadAtt(sid){ return attCache[sid] || {}; }
 function studentsByTerm(){
   const groups=[];
@@ -181,13 +182,13 @@ function onStudentPick(){
   if(!sid){ stu={sid:null,saved:{},draft:{},editing:new Set()}; box.innerHTML=''; return; }
   const saved=loadAtt(sid);
   const editing=new Set();
-  sortedLectures().forEach(l=>{ if(saved[l.id]===undefined) editing.add(l.id); });
+  latestLectures().forEach(l=>{ if(saved[l.id]===undefined) editing.add(l.id); });
   stu={sid, saved:{...saved}, draft:{...saved}, editing};
   renderStuForm();
 }
 function renderStuForm(){
   const box=document.getElementById('stuForm');
-  const rows=sortedLectures().map(l=>{
+  const rows=latestLectures().map(l=>{
     const savedVal=stu.saved[l.id];
     const isEditing=stu.editing.has(l.id);
     const done = savedVal!==undefined && !isEditing;
