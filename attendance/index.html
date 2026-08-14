@@ -46,6 +46,7 @@
   thead th{background:var(--aqua-mist);color:var(--aqua-deep);font-family:"M PLUS Rounded 1c",sans-serif;font-weight:700;font-size:13px}
   tbody th{text-align:left;font-weight:700;color:var(--aqua-ink);background:#fbfefe;position:sticky;left:0}
   td .o{color:var(--present);font-weight:800;font-size:18px} td .x{color:var(--absent);font-weight:800;font-size:18px} td .dash{color:#c7d8d5}
+  td.cell{cursor:pointer;transition:.1s} td.cell:hover{background:var(--aqua-mist);box-shadow:inset 0 0 0 2px var(--aqua-soft)}
   tbody tr:last-child th,tbody tr:last-child td{border-bottom:none}
   .lecrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px;border:1.5px solid var(--line);border-radius:12px;margin-bottom:10px}
   .lecrow.done{background:var(--aqua-mist);border-color:var(--aqua-soft)}
@@ -242,7 +243,7 @@ function renderAdmin(){
   view.innerHTML=`
     <div class="card">
       <h2><span class="n">1</span>出欠状況一覧<button class="btn ghost sm" style="margin-left:auto" onclick="exportAttendanceCsv()">📄 CSVで書き出す</button></h2>
-      <p class="hint">○＝出席／×＝欠席／−＝未送信。受講生の送信がリアルタイムで反映されます。期ごとに表示します。</p>
+      <p class="hint">○＝出席／×＝欠席／−＝未送信。受講生の送信がリアルタイムで反映されます。<b>マスをクリックすると管理者が修正できます</b>（出席→欠席→未送信）。</p>
       <div id="grid" class="loading">集計中…</div>
     </div>
     <div class="card">
@@ -285,9 +286,8 @@ function buildGrid(){
     const rows=g.list.map(s=>{
       const a=loadAtt(s.id);
       const cells=lecs.map(l=>{ const v=a[l.id];
-        if(v==='present')return'<td><span class="o">○</span></td>';
-        if(v==='absent')return'<td><span class="x">×</span></td>';
-        return'<td><span class="dash">−</span></td>'; }).join('');
+        const sym = v==='present'?'<span class="o">○</span>' : v==='absent'?'<span class="x">×</span>' : '<span class="dash">−</span>';
+        return `<td class="cell" onclick="setMark('${s.id}','${l.id}')" title="クリックで 出席→欠席→未送信">${sym}</td>`; }).join('');
       return `<tr><th>${esc(s.name)}</th>${cells}</tr>`;
     }).join('');
     return gh+rows;
@@ -296,6 +296,16 @@ function buildGrid(){
   for(const s of activeStudents()){ const a=loadAtt(s.id); for(const l of lecs){ if(a[l.id]==='present')present++; else if(a[l.id]==='absent')absent++; } }
   el.innerHTML=`<div class="tablewrap"><table><thead>${head}</thead><tbody>${body}</tbody></table></div>
     <div class="stat"><div>出席 <span>${present}</span></div><div>欠席 <span>${absent}</span></div><div>未送信 <span>${total-present-absent}</span></div></div>`;
+}
+/* ===== 管理者による個別の出欠編集（セルをクリックで 出席→欠席→未送信） ===== */
+async function setMark(sid, lid){
+  const cur=(attCache[sid]||{})[lid];
+  const next = cur===undefined ? 'present' : (cur==='present' ? 'absent' : undefined);
+  const marks={...(attCache[sid]||{})};
+  if(next===undefined) delete marks[lid]; else marks[lid]=next;
+  attCache[sid]=marks;   // 楽観的更新（即時反映）
+  buildGrid();
+  try{ await saveAtt(sid, marks); }catch(e){ toast('保存に失敗しました'); }
 }
 /* ===== 受講生カルテ向け CSV 書き出し ===== */
 function csvCell(s){ s=(s==null?'':String(s)); return /[",\n\r]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; }
